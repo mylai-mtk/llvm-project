@@ -285,7 +285,7 @@ def uimm20_auipc : UImm20OperandMaybeSym {
   let ParserMatchClass = UImmAsmOperand<20, "AUIPC">;
 }
 
-def uimm20 : UImm20Operand {
+def uimm20 : UImm20Operand, TImmLeaf<XLenVT, [{ return isUInt<20>(Imm); }]> {
   let ParserMatchClass = UImmAsmOperand<20>;
   let MCOperandPredicate = [{
     int64_t Imm;
@@ -774,6 +774,14 @@ def SRAW  : ALUW_rr<0b0100000, 0b101, "sraw">,
             Sched<[WriteShiftReg32, ReadShiftReg32, ReadShiftReg32]>;
 } // IsSignExtendingOpW = 1
 } // Predicates = [IsRV64]
+
+let Predicates = [HasStdExtZicfilp] in {
+let hasSideEffects = 1, mayLoad = 0, mayStore = 0, Size = 4, Defs = [X7] in
+def PseudoSET_LANDINGPAD_LABEL :
+    Pseudo<(outs), (ins uimm20:$uimm20),
+           [(int_riscv_set_lpad_label uimm20:$uimm20)]>,
+    PseudoInstExpansion<(LUI X7, uimm20_lui:$uimm20)>;
+}
 
 //===----------------------------------------------------------------------===//
 // Privileged instructions
