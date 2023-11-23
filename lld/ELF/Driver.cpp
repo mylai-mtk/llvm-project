@@ -2714,7 +2714,7 @@ static void redirectSymbols(Ctx &ctx, ArrayRef<WrappedSymbol> wrapped) {
 // ones can be allowed (see -z pauth-report).
 static void readSecurityNotes(Ctx &ctx) {
   if (ctx.arg.emachine != EM_386 && ctx.arg.emachine != EM_X86_64 &&
-      ctx.arg.emachine != EM_AARCH64)
+      ctx.arg.emachine != EM_AARCH64 && ctx.arg.emachine != EM_RISCV)
     return;
 
   ctx.arg.andFeatures = -1;
