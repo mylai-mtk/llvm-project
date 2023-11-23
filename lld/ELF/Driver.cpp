@@ -493,6 +493,13 @@ static void checkOptions(Ctx &ctx) {
   if (ctx.arg.emachine != EM_386 && ctx.arg.emachine != EM_X86_64 &&
       ctx.arg.zCetReport != "none")
     error("-z cet-report only supported on X86 and X86_64");
+
+  if (ctx.arg.emachine != EM_RISCV) {
+    if (ctx.arg.zZicfilpReport != "none")
+      error("-z zicfilip-report only supported on RISCV32/RISCV64");
+    if (ctx.arg.zZicfissReport != "none")
+      error("-z zicfiss-report only supported on RISCV32/RISCV64");
+  }
 }
 
 static const char *getReproduceOption(opt::InputArgList &args) {
@@ -1525,6 +1532,8 @@ static void readConfigs(Ctx &ctx, opt::InputArgList &args) {
   ctx.arg.zWxneeded = hasZOption(args, "wxneeded");
   setUnresolvedSymbolPolicy(ctx, args);
   ctx.arg.power10Stubs = args.getLastArgValue(OPT_power10_stubs_eq) != "no";
+  ctx.arg.zForceZicfilp = hasZOption(args, "force-zicfilp");
+  ctx.arg.zForceZicfiss = hasZOption(args, "force-zicfiss");
 
   if (opt::Arg *arg = args.getLastArg(OPT_eb, OPT_el)) {
     if (arg->getOption().matches(OPT_eb))
@@ -1569,7 +1578,9 @@ static void readConfigs(Ctx &ctx, opt::InputArgList &args) {
   auto reports = {std::make_pair("bti-report", &ctx.arg.zBtiReport),
                   std::make_pair("cet-report", &ctx.arg.zCetReport),
                   std::make_pair("gcs-report", &ctx.arg.zGcsReport),
-                  std::make_pair("pauth-report", &ctx.arg.zPauthReport)};
+                  std::make_pair("pauth-report", &ctx.arg.zPauthReport),
+                  std::make_pair("zicfilp-report", &ctx.arg.zZicfilpReport),
+                  std::make_pair("zicfiss-report", &ctx.arg.zZicfissReport)};
   for (opt::Arg *arg : args.filtered(OPT_z)) {
     std::pair<StringRef, StringRef> option =
         StringRef(arg->getValue()).split('=');
@@ -2767,6 +2778,16 @@ static void readSecurityNotes(Ctx &ctx) {
         toString(f) + ": -z cet-report: file does not have "
                       "GNU_PROPERTY_X86_FEATURE_1_SHSTK property");
 
+    checkAndReportMissingFeature(
+        ctx.arg.zZicfilpReport, features, GNU_PROPERTY_RISCV_FEATURE_1_ZICFILP,
+        toString(f) + ": -z zicfilp-report: file does not have "
+                      "GNU_PROPERTY_RISCV_FEATURE_1_ZICFILP property");
+
+    checkAndReportMissingFeature(
+        ctx.arg.zZicfissReport, features, GNU_PROPERTY_RISCV_FEATURE_1_ZICFISS,
+        toString(f) + ": -z zicfiss-report: file does not have "
+                      "GNU_PROPERTY_RISCV_FEATURE_1_ZICFISS property");
+
     if (ctx.arg.zForceBti && !(features & GNU_PROPERTY_AARCH64_FEATURE_1_BTI)) {
       features |= GNU_PROPERTY_AARCH64_FEATURE_1_BTI;
       if (ctx.arg.zBtiReport == "none")
@@ -2784,6 +2805,22 @@ static void readSecurityNotes(Ctx &ctx) {
                          "GNU_PROPERTY_AARCH64_FEATURE_1_PAC property");
       features |= GNU_PROPERTY_AARCH64_FEATURE_1_PAC;
     }
+
+    if (ctx.arg.zForceZicfilp &&
+        !(features & GNU_PROPERTY_RISCV_FEATURE_1_ZICFILP)) {
+      features |= GNU_PROPERTY_RISCV_FEATURE_1_ZICFILP;
+      if (ctx.arg.zZicfilpReport == "none")
+        warn(toString(f) + ": -z force-zicfilp: file does not have "
+                           "GNU_PROPERTY_RISCV_FEATURE_1_ZICFILP property");
+    }
+    if (ctx.arg.zForceZicfiss &&
+        !(features & GNU_PROPERTY_RISCV_FEATURE_1_ZICFISS)) {
+      features |= GNU_PROPERTY_RISCV_FEATURE_1_ZICFISS;
+      if (ctx.arg.zZicfissReport == "none")
+        warn(toString(f) + ": -z force-zicfiss: file does not have "
+                           "GNU_PROPERTY_RISCV_FEATURE_1_ZICFISS property");
+    }
+
     ctx.arg.andFeatures &= features;
 
     if (ctx.aarch64PauthAbiCoreInfo.empty())
