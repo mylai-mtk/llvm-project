@@ -973,9 +973,18 @@ void readGnuProperty(const InputSection &sec, ObjFile<ELFT> &f) {
       continue;
     }
 
-    uint32_t featureAndType = ctx.arg.emachine == EM_AARCH64
-                                  ? GNU_PROPERTY_AARCH64_FEATURE_1_AND
-                                  : GNU_PROPERTY_X86_FEATURE_1_AND;
+    uint32_t featureAndType = 0;
+    switch (ctx.arg.emachine) {
+    default:
+      featureAndType = GNU_PROPERTY_X86_FEATURE_1_AND;
+      break;
+    case EM_AARCH64:
+      featureAndType = GNU_PROPERTY_AARCH64_FEATURE_1_AND;
+      break;
+    case EM_RISCV:
+      featureAndType = GNU_PROPERTY_RISCV_FEATURE_1_AND;
+      break;
+    }
 
     // Read a body of a NOTE record, which consists of type-length-value fields.
     ArrayRef<uint8_t> desc = note.getDesc(sec.addralign);
