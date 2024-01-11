@@ -94,6 +94,9 @@ void initializeRISCVPreLegalizerCombinerPass(PassRegistry &);
 
 FunctionPass *createRISCVZicfilpSetupCFITypeIdPass();
 void initializeRISCVZicfilpSetupCFITypeIdPass(PassRegistry &);
+
+FunctionPass *createRISCVZicfilpLandingPadPass();
+void initializeRISCVZicfilpLandingPadPass(PassRegistry &);
 } // namespace llvm
 
 #endif
