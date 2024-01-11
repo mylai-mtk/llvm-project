@@ -515,6 +515,8 @@ void RISCVPassConfig::addPreEmitPass() {
   if (TM->getOptLevel() >= CodeGenOptLevel::Default &&
       EnableRISCVCopyPropagation)
     addPass(createMachineCopyPropagationPass(true));
+
+  addPass(createRISCVZicfilpLandingPadPass());
 }
 
 void RISCVPassConfig::addPreEmitPass2() {
