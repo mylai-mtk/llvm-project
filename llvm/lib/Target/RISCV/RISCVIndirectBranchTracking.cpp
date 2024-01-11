@@ -19,6 +19,7 @@
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineModuleInfo.h"
+#include "llvm/IR/Module.h"
 
 using namespace llvm;
 
@@ -61,11 +62,28 @@ bool RISCVIndirectBranchTrackingPass::runOnMachineFunction(
     MachineFunction &MF) {
   const auto &Subtarget = MF.getSubtarget<RISCVSubtarget>();
   const RISCVInstrInfo *TII = Subtarget.getInstrInfo();
-  if (!Subtarget.hasStdExtZicfilp())
+
+  const Module *const M = MF.getFunction().getParent();
+  if (!M)
+    return false;
+  if (const Metadata *const CFProtectionBranchFlag =
+          M->getModuleFlag("cf-protection-branch");
+      !CFProtectionBranchFlag ||
+      mdconst::extract<ConstantInt>(CFProtectionBranchFlag)->isZero())
     return false;
 
+  StringRef CFBranchLabelScheme;
+  if (const Metadata *const MD = M->getModuleFlag("cf-branch-label-scheme"))
+    CFBranchLabelScheme = cast<MDString>(MD)->getString();
+  else
+    report_fatal_error(
+        "module should hold its cf-branch-label-scheme=unlabeled|func-sig in "
+        "module flag");
+
+  const bool UseFixedLabelForFuncEntry = CFBranchLabelScheme == "unlabeled";
   uint32_t FixedLabel = 0;
-  if (PreferredLandingPadLabel.getNumOccurrences() > 0) {
+  if (UseFixedLabelForFuncEntry &&
+      PreferredLandingPadLabel.getNumOccurrences() > 0) {
     if (!isUInt<20>(PreferredLandingPadLabel))
       report_fatal_error("riscv-landing-pad-label=<val>, <val> needs to fit in "
                          "unsigned 20-bits");
@@ -81,7 +99,16 @@ bool RISCVIndirectBranchTrackingPass::runOnMachineFunction(
         continue;
 
       if (F.hasAddressTaken() || !F.hasLocalLinkage()) {
-        emitLpad(MBB, TII, FixedLabel);
+        uint32_t Label;
+        if (UseFixedLabelForFuncEntry || !F.getMetadata("riscv_lpad_label"))
+          Label = FixedLabel;
+        else {
+          const MDNode &MD = *F.getMetadata("riscv_lpad_label");
+          Label =
+              mdconst::extract<ConstantInt>(MD.getOperand(0))->getZExtValue();
+        }
+
+        emitLpad(MBB, TII, Label);
         if (MF.getAlignment() < LpadAlign)
           MF.setAlignment(LpadAlign);
         Changed = true;
