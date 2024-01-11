@@ -100,6 +100,7 @@ public:
   std::map<HwasanMemaccessTuple, MCSymbol *> HwasanMemaccessSymbols;
   void LowerHWASAN_CHECK_MEMACCESS(const MachineInstr &MI);
   void LowerKCFI_CHECK(const MachineInstr &MI);
+  void LowerPseudoLPADLike(const MachineInstr &MI);
   void LowerPseudoSETUP_LPAD_LABEL(const MachineInstr &MI);
   void EmitHwasanMemaccessSymbols(Module &M);
 
@@ -323,6 +324,9 @@ void RISCVAsmPrinter::emitInstruction(const MachineInstr *MI) {
   case RISCV::KCFI_CHECK:
     LowerKCFI_CHECK(*MI);
     return;
+  case RISCV::PseudoLPAD:
+  case RISCV::PseudoLPAD_WITH_LABEL_SRC:
+    return LowerPseudoLPADLike(*MI);
   case RISCV::PseudoSETUP_LPAD_LABEL:
     return LowerPseudoSETUP_LPAD_LABEL(*MI);
   case TargetOpcode::STACKMAP:
@@ -1325,6 +1329,42 @@ void RISCVAsmPrinter::emitMachineConstantPoolValue(
       MCSymbolRefExpr::create(MCSym, MCSymbolRefExpr::VK_None, OutContext);
   uint64_t Size = getDataLayout().getTypeAllocSize(RCPV->getType());
   OutStreamer->emitValue(Expr, Size);
+}
+
+void RISCVAsmPrinter::LowerPseudoLPADLike(const MachineInstr &MI) {
+  auto &RTS =
+      *static_cast<RISCVTargetStreamer *>(OutStreamer->getTargetStreamer());
+  const MCSymbol *LpadAnchorSym = nullptr;
+  const MachineFunction *const MF = MI.getMF();
+  const bool IsFuncBegin = MF && &MI == &MF->front().front();
+  if (IsFuncBegin)
+    LpadAnchorSym = CurrentFnSym;
+
+  StringRef LabelSrc;
+  const bool HasLabelSrc = MI.getOpcode() == RISCV::PseudoLPAD_WITH_LABEL_SRC;
+  if (HasLabelSrc) {
+    LabelSrc = cast<MDString>(MI.getOperand(1).getMetadata()->getOperand(0))
+                   ->getString();
+    const MCSymbol *const MapSym = RTS.emitLpadMappingSymbol(LabelSrc);
+    if (!LpadAnchorSym && MapSym)
+      LpadAnchorSym = MapSym;
+  }
+
+  const uint32_t Label = MI.getOperand(0).getImm();
+  if (LpadAnchorSym)
+    RTS.recordLpadInfo(*LpadAnchorSym, Label);
+
+  const RISCVMCExpr *const LabelExpr =
+      HasLabelSrc
+          ? RISCVLpadHashMCExpr::create(Label, LabelSrc, OutContext)
+          : RISCVMCExpr::create(MCConstantExpr::create(Label, OutContext),
+                                RISCVMCExpr::VK_RISCV_LPAD_LABEL, OutContext);
+  const MCSubtargetInfo &MCSTI = *TM.getMCSubtargetInfo();
+  EmitToStreamer(*OutStreamer,
+                 MCInstBuilder(RISCV::AUIPC)
+                     .addReg(RISCV::X0)
+                     .addOperand(MCOperand::createExpr(LabelExpr)),
+                 MCSTI);
 }
 
 void RISCVAsmPrinter::LowerPseudoSETUP_LPAD_LABEL(const MachineInstr &MI) {

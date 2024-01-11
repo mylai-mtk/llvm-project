@@ -19,8 +19,11 @@
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineModuleInfo.h"
+#include "llvm/IR/Module.h"
+#include "llvm/Support/RISCVISAUtils.h"
 
 using namespace llvm;
+using namespace llvm::RISCVISAUtils;
 
 cl::opt<uint32_t> PreferredLandingPadLabel(
     "riscv-landing-pad-label", cl::ReallyHidden,
@@ -51,21 +54,48 @@ FunctionPass *llvm::createRISCVIndirectBranchTrackingPass() {
 }
 
 static void emitLpad(MachineBasicBlock &MBB, const RISCVInstrInfo *TII,
-                     uint32_t Label) {
+                     uint32_t Label, const MDNode *LabelSrc) {
   auto I = MBB.begin();
-  BuildMI(MBB, I, MBB.findDebugLoc(I), TII->get(RISCV::AUIPC), RISCV::X0)
-      .addImm(Label);
+  const auto Opcode =
+      LabelSrc ? RISCV::PseudoLPAD_WITH_LABEL_SRC : RISCV::PseudoLPAD;
+  const MachineInstrBuilder &MIB =
+      BuildMI(MBB, I, MBB.findDebugLoc(I), TII->get(Opcode)).addImm(Label);
+  if (LabelSrc)
+    MIB.addMetadata(LabelSrc);
 }
 
 bool RISCVIndirectBranchTrackingPass::runOnMachineFunction(
     MachineFunction &MF) {
   const auto &Subtarget = MF.getSubtarget<RISCVSubtarget>();
   const RISCVInstrInfo *TII = Subtarget.getInstrInfo();
-  if (!Subtarget.hasStdExtZicfilp())
+
+  const Module *const M = MF.getFunction().getParent();
+  if (!M)
+    return false;
+  if (const Metadata *const CFProtectionBranchFlag =
+          M->getModuleFlag("cf-protection-branch");
+      !CFProtectionBranchFlag ||
+      mdconst::extract<ConstantInt>(CFProtectionBranchFlag)->isZero())
     return false;
 
+  StringRef CFBranchLabelScheme;
+  if (const Metadata *const MD = M->getModuleFlag("cf-branch-label-scheme"))
+    CFBranchLabelScheme = cast<MDString>(MD)->getString();
+  else
+    report_fatal_error(
+        "module should hold its cf-branch-label-scheme=unlabeled|func-sig in "
+        "module flag");
+
+  const ZicfilpLabelSchemeKind Scheme =
+      getZicfilpLabelScheme(CFBranchLabelScheme);
+  if (Scheme == ZicfilpLabelSchemeKind::Invalid)
+    report_fatal_error("invalid cf-branch-label-scheme");
+
+  const bool UseFixedLabelForFuncEntry =
+      Scheme == ZicfilpLabelSchemeKind::Unlabeled;
   uint32_t FixedLabel = 0;
-  if (PreferredLandingPadLabel.getNumOccurrences() > 0) {
+  if (UseFixedLabelForFuncEntry &&
+      PreferredLandingPadLabel.getNumOccurrences() > 0) {
     if (!isUInt<20>(PreferredLandingPadLabel))
       report_fatal_error("riscv-landing-pad-label=<val>, <val> needs to fit in "
                          "unsigned 20-bits");
@@ -81,7 +111,22 @@ bool RISCVIndirectBranchTrackingPass::runOnMachineFunction(
         continue;
 
       if (F.hasAddressTaken() || !F.hasLocalLinkage()) {
-        emitLpad(MBB, TII, FixedLabel);
+        uint32_t Label;
+        if (UseFixedLabelForFuncEntry || !F.getMetadata("riscv_lpad_label"))
+          Label = FixedLabel;
+        else {
+          const MDNode &MD = *F.getMetadata("riscv_lpad_label");
+          Label =
+              mdconst::extract<ConstantInt>(MD.getOperand(0))->getZExtValue();
+        }
+
+        const MDNode *LabelSrc;
+        if (Scheme == ZicfilpLabelSchemeKind::FuncSig)
+          LabelSrc = F.getMetadata("riscv_lpad_func_sig");
+        else
+          LabelSrc = nullptr;
+
+        emitLpad(MBB, TII, Label, LabelSrc);
         if (MF.getAlignment() < LpadAlign)
           MF.setAlignment(LpadAlign);
         Changed = true;
@@ -90,7 +135,7 @@ bool RISCVIndirectBranchTrackingPass::runOnMachineFunction(
     }
 
     if (MBB.hasAddressTaken()) {
-      emitLpad(MBB, TII, FixedLabel);
+      emitLpad(MBB, TII, FixedLabel, /*LabelSrc=*/nullptr);
       if (MBB.getAlignment() < LpadAlign)
         MBB.setAlignment(LpadAlign);
       Changed = true;

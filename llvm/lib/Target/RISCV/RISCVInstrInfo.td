@@ -809,6 +809,9 @@ def SRAW  : ALUW_rr<0b0100000, 0b101, "sraw">,
 
 let Predicates = [HasStdExtZicfilp], Size = 4, mayLoad = 0, mayStore = 0,
     hasSideEffects = 1 in {
+def PseudoLPAD : Pseudo<(outs), (ins uimm20:$label), []>;
+def PseudoLPAD_WITH_LABEL_SRC :
+    Pseudo<(outs), (ins uimm20:$label, Operand<MetadataVT>:$label_src), []>;
 def PseudoSETUP_LPAD_LABEL :
     Pseudo<(outs), (ins uimm20:$label, Operand<MetadataVT>:$label_src), []> {
   let Defs = [X7];
