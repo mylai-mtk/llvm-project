@@ -52,7 +52,7 @@ option(LIBCXX_ENABLE_ASSERTIONS
   "Enable assertions inside the compiled library, and at the same time make it the
    default when compiling user code. Note that assertions can be enabled or disabled
    by users in their own code regardless of this option." OFF)
-option(LIBCXX_ENABLE_SHARED "Build libc++ as a shared library." ON)
+option(LIBCXX_ENABLE_SHARED "Build libc++ as a shared library." OFF)
 option(LIBCXX_ENABLE_STATIC "Build libc++ as a static library." ON)
 option(LIBCXX_ENABLE_FILESYSTEM
   "Whether to include support for parts of the library that rely on a filesystem being
@@ -243,7 +243,7 @@ endif()
 
 option(LIBCXX_ENABLE_STATIC_ABI_LIBRARY
   "Use a static copy of the ABI library when linking libc++.
-   This option cannot be used with LIBCXX_ENABLE_ABI_LINKER_SCRIPT." OFF)
+   This option cannot be used with LIBCXX_ENABLE_ABI_LINKER_SCRIPT." ON)
 
 option(LIBCXX_STATICALLY_LINK_ABI_IN_STATIC_LIBRARY
   "Statically link the ABI library to static library"
@@ -295,7 +295,7 @@ option(LIBCXX_ENABLE_THREADS "Build libc++ with support for threads." ON)
 option(LIBCXX_ENABLE_MONOTONIC_CLOCK
   "Build libc++ with support for a monotonic clock.
    This option may only be set to OFF when LIBCXX_ENABLE_THREADS=OFF." ON)
-option(LIBCXX_HAS_MUSL_LIBC "Build libc++ with support for the Musl C library" OFF)
+option(LIBCXX_HAS_MUSL_LIBC "Build libc++ with support for the Musl C library" ON)
 option(LIBCXX_HAS_PTHREAD_API "Ignore auto-detection and force use of pthread API" OFF)
 option(LIBCXX_HAS_WIN32_THREAD_API "Ignore auto-detection and force use of win32 thread API" OFF)
 option(LIBCXX_HAS_EXTERNAL_THREAD_API

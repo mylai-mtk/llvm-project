@@ -102,7 +102,7 @@ usual symlinks pointing to that.")
 # the libc++abi that is being built. The problem with testing a static libc++abi
 # is that libc++ will prefer a dynamic libc++abi from the system over a static
 # libc++abi from the output directory.
-option(LIBCXXABI_ENABLE_SHARED "Build libc++abi as a shared library." ON)
+option(LIBCXXABI_ENABLE_SHARED "Build libc++abi as a shared library." OFF)
 option(LIBCXXABI_ENABLE_STATIC "Build libc++abi as a static library." ON)
 
 cmake_dependent_option(LIBCXXABI_INSTALL_STATIC_LIBRARY
