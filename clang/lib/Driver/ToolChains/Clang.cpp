@@ -2127,6 +2127,17 @@ void Clang::AddRISCVTargetArgs(const ArgList &Args,
           << A->getSpelling() << Val;
     }
   }
+
+  if (Arg *A = Args.getLastArg(options::OPT_mzicfilp_label_scheme_EQ)) {
+    StringRef Scheme = A->getValue();
+    if (Scheme == "none" || Scheme == "simple" || Scheme == "func_sig")
+      CmdArgs.push_back(Args.MakeArgString("-mzicfilp-label-scheme=" + Scheme));
+    else {
+      const Driver &D = getToolChain().getDriver();
+      D.Diag(diag::err_drv_invalid_value_with_suggestion)
+        << A->getAsString(Args) << Scheme << "none simple func_sig";
+    }
+  }
 }
 
 void Clang::AddSparcTargetArgs(const ArgList &Args,
