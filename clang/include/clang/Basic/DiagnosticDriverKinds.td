@@ -804,4 +804,7 @@ def warn_android_unversioned_fallback : Warning<
 
 def err_drv_triple_version_invalid : Error<
   "version '%0' in target triple '%1' is invalid">;
+
+def err_drv_option_requries_target_feature : Error<
+  "option '%0' requires target feature '%1'">;
 }

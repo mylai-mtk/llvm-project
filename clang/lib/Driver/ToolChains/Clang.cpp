@@ -2067,6 +2067,7 @@ static void SetRISCVSmallDataLimit(const ToolChain &TC, const ArgList &Args,
 
 void Clang::AddRISCVTargetArgs(const ArgList &Args,
                                ArgStringList &CmdArgs) const {
+  const Driver &D = getToolChain().getDriver();
   const llvm::Triple &Triple = getToolChain().getTriple();
   StringRef ABIName = riscv::getRISCVABI(Args, Triple);
 
@@ -2074,6 +2075,12 @@ void Clang::AddRISCVTargetArgs(const ArgList &Args,
   CmdArgs.push_back(ABIName.data());
 
   SetRISCVSmallDataLimit(getToolChain(), Args, CmdArgs);
+
+  const StringRef Arch = riscv::getRISCVArch(Args, Triple);
+  std::unique_ptr<llvm::RISCVISAInfo> ISAInfo;
+  if (llvm::Error Err = llvm::RISCVISAInfo::parseArchString(
+        Arch, /*EnableExperimentalExtensions=*/true).moveInto(ISAInfo))
+    consumeError(std::move(Err));
 
   if (!Args.hasFlag(options::OPT_mimplicit_float,
                     options::OPT_mno_implicit_float, true))
@@ -2090,16 +2097,11 @@ void Clang::AddRISCVTargetArgs(const ArgList &Args,
   // Handle -mrvv-vector-bits=<bits>
   if (Arg *A = Args.getLastArg(options::OPT_mrvv_vector_bits_EQ)) {
     StringRef Val = A->getValue();
-    const Driver &D = getToolChain().getDriver();
 
     // Get minimum VLen from march.
     unsigned MinVLen = 0;
-    StringRef Arch = riscv::getRISCVArch(Args, Triple);
-    auto ISAInfo = llvm::RISCVISAInfo::parseArchString(
-        Arch, /*EnableExperimentalExtensions*/ true);
-    // Ignore parsing error.
-    if (!errorToBool(ISAInfo.takeError()))
-      MinVLen = (*ISAInfo)->getMinVLen();
+    if (ISAInfo)
+      MinVLen = ISAInfo->getMinVLen();
 
     // If the value is "zvl", use MinVLen from march. Otherwise, try to parse
     // as integer as long as we have a MinVLen.
@@ -2126,6 +2128,18 @@ void Clang::AddRISCVTargetArgs(const ArgList &Args,
       D.Diag(diag::err_drv_unsupported_option_argument)
           << A->getSpelling() << Val;
     }
+  }
+
+  if (Arg *A = Args.getLastArg(options::OPT_mzicfilp_label_scheme_EQ)) {
+    const StringRef Scheme = A->getValue();
+    if (Scheme == "none" || Scheme == "simple" || Scheme == "func_sig") {
+      if (Scheme != "none" && (!ISAInfo || !ISAInfo->hasExtension("zicfilp")))
+        D.Diag(diag::err_arch_unsupported_isa) << Arch << A->getAsString(Args);
+
+      CmdArgs.push_back(Args.MakeArgString("-mzicfilp-label-scheme=" + Scheme));
+    } else
+      D.Diag(diag::err_drv_invalid_value_with_suggestion)
+        << A->getAsString(Args) << Scheme << "none simple func_sig";
   }
 }
 

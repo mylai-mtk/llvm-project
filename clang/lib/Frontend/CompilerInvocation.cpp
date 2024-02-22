@@ -80,6 +80,7 @@
 #include "llvm/Support/Path.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/Regex.h"
+#include "llvm/Support/RISCVISAInfo.h"
 #include "llvm/Support/VersionTuple.h"
 #include "llvm/Support/VirtualFileSystem.h"
 #include "llvm/Support/raw_ostream.h"
@@ -3632,6 +3633,18 @@ void CompilerInvocationBase::GenerateLangArgs(const LangOptions &Opts,
       LangOptions::SignReturnAddressKeyKind::BKey)
     GenerateArg(Consumer, OPT_msign_return_address_key_EQ, "b_key");
 
+  switch (Opts.getZicfilpLabelScheme()) {
+  case LangOptions::RISCVZicfilpLabelSchemeKind::None:
+    GenerateArg(Consumer, OPT_mzicfilp_label_scheme_EQ, "none");
+    break;
+  case LangOptions::RISCVZicfilpLabelSchemeKind::Simple:
+    GenerateArg(Consumer, OPT_mzicfilp_label_scheme_EQ, "simple");
+    break;
+  case LangOptions::RISCVZicfilpLabelSchemeKind::FuncSig:
+    GenerateArg(Consumer, OPT_mzicfilp_label_scheme_EQ, "func_sig");
+    break;
+  }
+
   if (Opts.CXXABI)
     GenerateArg(Consumer, OPT_fcxx_abi_EQ,
                 TargetCXXABI::getSpelling(*Opts.CXXABI));
@@ -4160,6 +4173,19 @@ bool CompilerInvocation::ParseLangArgs(LangOptions &Opts, ArgList &Args,
     }
   }
 
+  if (Arg *A = Args.getLastArg(OPT_mzicfilp_label_scheme_EQ)) {
+    const StringRef Scheme = A->getValue();
+    if (Scheme == "none")
+      Opts.setZicfilpLabelScheme(LangOptions::RISCVZicfilpLabelSchemeKind::None);
+    else if (Scheme == "simple")
+      Opts.setZicfilpLabelScheme(LangOptions::RISCVZicfilpLabelSchemeKind::Simple);
+    else if (Scheme == "func_sig")
+      Opts.setZicfilpLabelScheme(LangOptions::RISCVZicfilpLabelSchemeKind::FuncSig);
+    else
+      Diags.Report(diag::err_drv_invalid_value_with_suggestion)
+        << A->getAsString(Args) << Scheme << "none simple func_sig";
+  }
+
   // The value can be empty, which indicates the system default should be used.
   StringRef CXXABI = Args.getLastArgValue(OPT_fcxx_abi_EQ);
   if (!CXXABI.empty()) {
@@ -4676,6 +4702,25 @@ bool CompilerInvocation::CreateFromArgsImpl(
     setPGOUseInstrumentor(Res.getCodeGenOpts(),
                           Res.getCodeGenOpts().ProfileInstrumentUsePath, *FS,
                           Diags);
+  }
+
+  if (Res.getLangOpts().getZicfilpLabelScheme() !=
+      LangOptions::RISCVZicfilpLabelSchemeKind::None) {
+    if (T.isRISCV()) {
+      llvm::StringMap<bool> FeatureMapFromWritten;
+      for (const std::string &F : Res.getTargetOpts().FeaturesAsWritten)
+        FeatureMapFromWritten[StringRef{F.c_str() + 1, F.length() - 1}] =
+          F[0] == '+';
+
+      const std::string ZicfilpTargetFeature =
+        llvm::RISCVISAInfo::getTargetFeatureForExtension("zicfilp");
+
+      if (!FeatureMapFromWritten.lookup(ZicfilpTargetFeature))
+        Diags.Report(diag::err_drv_option_requries_target_feature)
+          << "-mzicfilp-label-scheme" << ZicfilpTargetFeature;
+    } else
+      Diags.Report(diag::err_drv_unsupported_opt_for_target)
+        << "-mzicfilp-label-scheme" << T.str();
   }
 
   FixupInvocation(Res, Diags, Args, DashX);

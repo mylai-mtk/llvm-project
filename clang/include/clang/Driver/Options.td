@@ -4775,6 +4775,10 @@ def msign_return_address_EQ : Joined<["-"], "msign-return-address=">,
   Visibility<[ClangOption, CC1Option]>,
   Group<m_Group>, Values<"none,all,non-leaf">,
   HelpText<"Select return address signing scope">;
+def mzicfilp_label_scheme_EQ : Joined<["-"], "mzicfilp-label-scheme=">,
+  Visibility<[ClangOption, CC1Option]>,
+  Group<m_Group>, Values<"none,simple,func_sig">,
+  HelpText<"Enable/Disable Zicfilp labelling with scheme">;
 let Flags = [TargetSpecific] in {
 def mbranch_protection_EQ : Joined<["-"], "mbranch-protection=">,
   Group<m_Group>,

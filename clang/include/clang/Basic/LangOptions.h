@@ -334,6 +334,15 @@ public:
     BKey
   };
 
+  enum class RISCVZicfilpLabelSchemeKind {
+    /// No Zicfilp label scheme enabled.
+    None,
+    /// The simple labelling scheme, i.e. lpad label is always 0.
+    Simple,
+    /// Generate labels based on function signature.
+    FuncSig,
+  };
+
   enum class ThreadModelKind {
     /// POSIX Threads.
     POSIX,
