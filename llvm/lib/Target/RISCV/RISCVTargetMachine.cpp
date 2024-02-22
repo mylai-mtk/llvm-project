@@ -560,6 +560,7 @@ void RISCVPassConfig::addPreRegAlloc() {
     addPass(createRISCVDeadRegisterDefinitionsPass());
   addPass(createRISCVInsertReadWriteCSRPass());
   addPass(createRISCVInsertWriteVXRMPass());
+  addPass(createRISCVZicfilpSetupCFITypeIdPass());
 }
 
 void RISCVPassConfig::addFastRegAlloc() {
