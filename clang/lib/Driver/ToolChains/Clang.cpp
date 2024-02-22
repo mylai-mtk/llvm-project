@@ -2127,6 +2127,10 @@ void Clang::AddRISCVTargetArgs(const ArgList &Args,
           << A->getSpelling() << Val;
     }
   }
+
+  if (Arg *A = Args.getLastArg(options::OPT_mbranch_protection_EQ))
+    if (!strcmp(A->getValue(), "+zicfilp"))
+      CmdArgs.push_back("-mbranch-target-enforce");
 }
 
 void Clang::AddSparcTargetArgs(const ArgList &Args,
