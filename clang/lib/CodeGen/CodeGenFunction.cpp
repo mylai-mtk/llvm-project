@@ -2705,11 +2705,70 @@ void CodeGenFunction::EmitSanitizerStatReport(llvm::SanitizerStatKind SSK) {
 }
 
 void CodeGenFunction::EmitCFIOperandBundle(
-    const CGCallee &Callee, SmallVectorImpl<llvm::OperandBundleDef> &Bundles) {
-  const FunctionProtoType *FP =
-      Callee.getAbstractInfo().getCalleeFunctionProtoType();
-  if (FP)
-    Bundles.emplace_back("cfi", CGM.CreateKCFITypeId(FP->desugar()));
+    const CodeGenModule::CFITypeIdSchemeKind Scheme,
+    const Decl *TargetDecl,
+    const FunctionProtoType *FPT,
+    const CGFunctionInfo &CallInfo,
+    SmallVectorImpl<llvm::OperandBundleDef> &Bundles) {
+  llvm::ConstantInt *CFITypeId = nullptr;
+  switch (Scheme) {
+  case CodeGenModule::CFITypeIdSchemeKind::None:
+    return;
+  case CodeGenModule::CFITypeIdSchemeKind::KCFI:
+    if (!isa_and_nonnull<FunctionDecl>(TargetDecl) && FPT)
+      CFITypeId = CGM.CreateKCFITypeId(FPT->desugar());
+    break;
+  case CodeGenModule::CFITypeIdSchemeKind::RISCVZicfilpSimple:
+    // No need to setup label at call site
+    return;
+  case CodeGenModule::CFITypeIdSchemeKind::RISCVZicfilpFuncSig: {
+    QualType AdoptedRetTy = CallInfo.getReturnType();
+    if (isa_and_nonnull<CXXMethodDecl>(TargetDecl)) {
+      const auto *M = static_cast<const CXXMethodDecl*>(TargetDecl);
+      const auto *RetTyRecord = M->getReturnType()->getPointeeCXXRecordDecl();
+      if (M->isVirtual() && RetTyRecord) {
+        // Find the most "base" C++ type of return type
+        const CXXRecordDecl *MostBaseRecord = RetTyRecord;
+        for (const CXXMethodDecl *OM : M->overridden_methods()) {
+          const QualType OMRetTy = OM->getReturnType();
+          const CXXRecordDecl *R = OMRetTy->getPointeeCXXRecordDecl();
+          assert(R &&
+                "Overridden method should also return a C++ record type!");
+          if (MostBaseRecord->isDerivedFrom(R)) {
+            MostBaseRecord = R;
+            AdoptedRetTy = OMRetTy;
+          }
+        }
+      }
+    }
+    AdoptedRetTy = AdoptedRetTy.getCanonicalType();
+
+    llvm::SmallVector<QualType> ArgTys;
+    //for (const CGFunctionInfoArgInfo &AI : CallInfo.arguments())
+    //  ArgTys.push_back(AI.type);
+
+    DEBUG_WITH_TYPE("riscv-zicfilp-cfi",
+      llvm::dbgs() << "Add Zicfilp-CFI op bundle when calling [";
+      if (TargetDecl)
+        TargetDecl->dump(llvm::dbgs());
+      llvm::dbgs() << "] with effective func sig ["
+                   << AdoptedRetTy.getAsString() << '(';
+      if (ArgTys.size()) {
+        auto AI = ArgTys.begin();
+        const auto AIE = ArgTys.end();
+        llvm::dbgs() << AI->getAsString();
+        while (++AI != AIE)
+          llvm::dbgs() << ", " << AI->getAsString();
+      }
+      llvm::dbgs() << ")]\n";
+    );
+    CFITypeId = getTargetHooks().createCFITypeId(CGM, AdoptedRetTy, ArgTys);
+    break;
+  }
+  }
+
+  if (CFITypeId)
+    Bundles.emplace_back("cfi", CFITypeId);
 }
 
 llvm::Value *CodeGenFunction::FormAArch64ResolverCondition(

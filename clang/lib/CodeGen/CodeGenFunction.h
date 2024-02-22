@@ -4782,7 +4782,10 @@ public:
   /// passing to a runtime sanitizer handler.
   llvm::Constant *EmitCheckSourceLocation(SourceLocation Loc);
 
-  void EmitCFIOperandBundle(const CGCallee &Callee,
+  void EmitCFIOperandBundle(const CodeGenModule::CFITypeIdSchemeKind Scheme,
+                            const Decl *TargetDecl,
+                            const FunctionProtoType *FPT,
+                            const CGFunctionInfo &CallInfo,
                             SmallVectorImpl<llvm::OperandBundleDef> &Bundles);
 
   /// Create a basic block that will either trap or call a handler function in

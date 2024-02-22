@@ -5635,9 +5635,17 @@ RValue CodeGenFunction::EmitCall(const CGFunctionInfo &CallInfo,
   SmallVector<llvm::OperandBundleDef, 1> BundleList =
       getBundlesForFunclet(CalleePtr);
 
-  if (CGM.getCFITypeIdScheme() == CodeGenModule::CFITypeIdSchemeKind::KCFI &&
-      !isa_and_nonnull<FunctionDecl>(TargetDecl))
-    EmitCFIOperandBundle(ConcreteCallee, BundleList);
+  if (const auto Scheme = CGM.getCFITypeIdScheme();
+      Scheme != CodeGenModule::CFITypeIdSchemeKind::None) {
+    const bool IsIndirectCall = !isa<llvm::Function>(CalleePtr) &&
+                                !isa<llvm::Constant>(CalleePtr) &&
+                                !isa<llvm::InlineAsm>(CalleePtr);
+    if (IsIndirectCall) {
+      const auto *FPT = ConcreteCallee.getAbstractInfo()
+                                      .getCalleeFunctionProtoType();
+      EmitCFIOperandBundle(Scheme, TargetDecl, FPT, CallInfo, BundleList);
+    }
+  }
 
   if (const FunctionDecl *FD = dyn_cast_or_null<FunctionDecl>(CurFuncDecl))
     if (FD->hasAttr<StrictFPAttr>())
