@@ -2704,12 +2704,12 @@ void CodeGenFunction::EmitSanitizerStatReport(llvm::SanitizerStatKind SSK) {
   CGM.getSanStats().create(IRB, SSK);
 }
 
-void CodeGenFunction::EmitKCFIOperandBundle(
+void CodeGenFunction::EmitCFIOperandBundle(
     const CGCallee &Callee, SmallVectorImpl<llvm::OperandBundleDef> &Bundles) {
   const FunctionProtoType *FP =
       Callee.getAbstractInfo().getCalleeFunctionProtoType();
   if (FP)
-    Bundles.emplace_back("kcfi", CGM.CreateKCFITypeId(FP->desugar()));
+    Bundles.emplace_back("cfi", CGM.CreateKCFITypeId(FP->desugar()));
 }
 
 llvm::Value *CodeGenFunction::FormAArch64ResolverCondition(

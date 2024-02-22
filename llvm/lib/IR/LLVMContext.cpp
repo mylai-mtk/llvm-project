@@ -87,10 +87,10 @@ LLVMContext::LLVMContext() : pImpl(new LLVMContextImpl(*this)) {
          "ptrauth operand bundle id drifted!");
   (void)PtrauthEntry;
 
-  auto *KCFIEntry = pImpl->getOrInsertBundleTag("kcfi");
-  assert(KCFIEntry->second == LLVMContext::OB_kcfi &&
-         "kcfi operand bundle id drifted!");
-  (void)KCFIEntry;
+  auto *CFIEntry = pImpl->getOrInsertBundleTag("cfi");
+  assert(CFIEntry->second == LLVMContext::OB_cfi &&
+         "cfi operand bundle id drifted!");
+  (void)CFIEntry;
 
   auto *ConvergenceCtrlEntry = pImpl->getOrInsertBundleTag("convergencectrl");
   assert(ConvergenceCtrlEntry->second == LLVMContext::OB_convergencectrl &&

@@ -907,7 +907,7 @@ public:
     return true;
   }
 
-  bool supportKCFIBundles() const override { return true; }
+  bool supportCFIBundles() const override { return true; }
 
   MachineInstr *EmitKCFICheck(MachineBasicBlock &MBB,
                               MachineBasicBlock::instr_iterator &MBBI,

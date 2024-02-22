@@ -8404,10 +8404,10 @@ void SelectionDAGBuilder::LowerCallTo(const CallBase &CB, SDValue Callee,
 
   ConstantInt *CFIType = nullptr;
   if (CB.isIndirectCall()) {
-    if (auto Bundle = CB.getOperandBundle(LLVMContext::OB_kcfi)) {
-      if (!TLI.supportKCFIBundles())
+    if (auto Bundle = CB.getOperandBundle(LLVMContext::OB_cfi)) {
+      if (!TLI.supportCFIBundles())
         report_fatal_error(
-            "Target doesn't support calls with kcfi operand bundles.");
+            "Target doesn't support calls with cfi operand bundles.");
       CFIType = cast<ConstantInt>(Bundle->Inputs[0]);
       assert(CFIType->getType()->isIntegerTy(32) && "Invalid CFI type");
     }
@@ -8973,7 +8973,7 @@ void SelectionDAGBuilder::visitCall(const CallInst &I) {
   assert(!I.hasOperandBundlesOtherThan(
              {LLVMContext::OB_deopt, LLVMContext::OB_funclet,
               LLVMContext::OB_cfguardtarget, LLVMContext::OB_preallocated,
-              LLVMContext::OB_clang_arc_attachedcall, LLVMContext::OB_kcfi}) &&
+              LLVMContext::OB_clang_arc_attachedcall, LLVMContext::OB_cfi}) &&
          "Cannot lower calls with arbitrary operand bundles!");
 
   SDValue Callee = getValue(I.getCalledOperand());

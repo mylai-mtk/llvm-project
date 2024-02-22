@@ -54,7 +54,7 @@ PreservedAnalyses KCFIPass::run(Function &F, FunctionAnalysisManager &AM) {
   SmallVector<CallInst *> KCFICalls;
   for (Instruction &I : instructions(F)) {
     if (auto *CI = dyn_cast<CallInst>(&I))
-      if (CI->getOperandBundle(LLVMContext::OB_kcfi))
+      if (CI->getOperandBundle(LLVMContext::OB_cfi))
         KCFICalls.push_back(CI);
   }
 
@@ -78,12 +78,12 @@ PreservedAnalyses KCFIPass::run(Function &F, FunctionAnalysisManager &AM) {
   for (CallInst *CI : KCFICalls) {
     // Get the expected hash value.
     const uint32_t ExpectedHash =
-        cast<ConstantInt>(CI->getOperandBundle(LLVMContext::OB_kcfi)->Inputs[0])
+        cast<ConstantInt>(CI->getOperandBundle(LLVMContext::OB_cfi)->Inputs[0])
             ->getZExtValue();
 
     // Drop the KCFI operand bundle.
     CallBase *Call =
-        CallBase::removeOperandBundle(CI, LLVMContext::OB_kcfi, CI);
+        CallBase::removeOperandBundle(CI, LLVMContext::OB_cfi, CI);
     assert(Call != CI);
     Call->copyMetadata(*CI);
     CI->replaceAllUsesWith(Call);

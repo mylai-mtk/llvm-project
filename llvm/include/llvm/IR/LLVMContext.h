@@ -94,7 +94,7 @@ public:
     OB_gc_live = 5,                // "gc-live"
     OB_clang_arc_attachedcall = 6, // "clang.arc.attachedcall"
     OB_ptrauth = 7,                // "ptrauth"
-    OB_kcfi = 8,                   // "kcfi"
+    OB_cfi = 8,                    // "cfi"
     OB_convergencectrl = 9,        // "convergencectrl"
   };
 

@@ -2063,7 +2063,7 @@ llvm::InlineResult llvm::InlineFunction(CallBase &CB, InlineFunctionInfo &IFI,
         continue;
       if (Tag == LLVMContext::OB_clang_arc_attachedcall)
         continue;
-      if (Tag == LLVMContext::OB_kcfi)
+      if (Tag == LLVMContext::OB_cfi)
         continue;
       if (Tag == LLVMContext::OB_convergencectrl) {
         ConvergenceControlToken = OBUse.Inputs[0].get();

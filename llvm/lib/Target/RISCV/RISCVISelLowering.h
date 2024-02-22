@@ -859,7 +859,7 @@ public:
   bool lowerInterleaveIntrinsicToStore(IntrinsicInst *II,
                                        StoreInst *SI) const override;
 
-  bool supportKCFIBundles() const override { return true; }
+  bool supportCFIBundles() const override { return true; }
 
   SDValue expandIndirectJTBranch(const SDLoc &dl, SDValue Value, SDValue Addr,
                                  int JTI, SelectionDAG &DAG) const override;

@@ -4250,8 +4250,8 @@ public:
     return false;
   }
 
-  /// Return true if the target supports kcfi operand bundles.
-  virtual bool supportKCFIBundles() const { return false; }
+  /// Return true if the target supports cfi operand bundles.
+  virtual bool supportCFIBundles() const { return false; }
 
   /// Perform necessary initialization to handle a subset of CSRs explicitly
   /// via copies. This function is called at the beginning of instruction

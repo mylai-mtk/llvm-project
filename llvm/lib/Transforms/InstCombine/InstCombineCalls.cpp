@@ -3721,11 +3721,11 @@ Instruction *InstCombinerImpl::visitCallBase(CallBase &Call) {
             Call, Builder.CreateBitOrPointerCast(ReturnedArg, CallTy));
     }
 
-  // Drop unnecessary kcfi operand bundles from calls that were converted
+  // Drop unnecessary cfi operand bundles from calls that were converted
   // into direct calls.
-  auto Bundle = Call.getOperandBundle(LLVMContext::OB_kcfi);
+  auto Bundle = Call.getOperandBundle(LLVMContext::OB_cfi);
   if (Bundle && !Call.isIndirectCall()) {
-    DEBUG_WITH_TYPE(DEBUG_TYPE "-kcfi", {
+    DEBUG_WITH_TYPE(DEBUG_TYPE "-cfi", {
       if (CalleeF) {
         ConstantInt *FunctionType = nullptr;
         ConstantInt *ExpectedType = cast<ConstantInt>(Bundle->Inputs[0]);
@@ -3742,7 +3742,7 @@ Instruction *InstCombinerImpl::visitCallBase(CallBase &Call) {
       }
     });
 
-    return CallBase::removeOperandBundle(&Call, LLVMContext::OB_kcfi);
+    return CallBase::removeOperandBundle(&Call, LLVMContext::OB_cfi);
   }
 
   if (isRemovableAlloc(&Call, &TLI))

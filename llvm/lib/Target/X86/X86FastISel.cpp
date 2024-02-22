@@ -3231,7 +3231,7 @@ bool X86FastISel::fastLowerCall(CallLoweringInfo &CLI) {
     return false;
 
   // Indirect calls with CFI checks need special handling.
-  if (CB && CB->isIndirectCall() && CB->getOperandBundle(LLVMContext::OB_kcfi))
+  if (CB && CB->isIndirectCall() && CB->getOperandBundle(LLVMContext::OB_cfi))
     return false;
 
   // Functions using thunks for indirect calls need to use SDISel.

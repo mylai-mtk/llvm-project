@@ -1540,7 +1540,7 @@ namespace llvm {
 
     bool supportSwiftError() const override;
 
-    bool supportKCFIBundles() const override { return true; }
+    bool supportCFIBundles() const override { return true; }
 
     MachineInstr *EmitKCFICheck(MachineBasicBlock &MBB,
                                 MachineBasicBlock::instr_iterator &MBBI,

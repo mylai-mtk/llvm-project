@@ -3585,7 +3585,7 @@ void Verifier::visitCallBase(CallBase &Call) {
   bool FoundDeoptBundle = false, FoundFuncletBundle = false,
        FoundGCTransitionBundle = false, FoundCFGuardTargetBundle = false,
        FoundPreallocatedBundle = false, FoundGCLiveBundle = false,
-       FoundPtrauthBundle = false, FoundKCFIBundle = false,
+       FoundPtrauthBundle = false, FoundCFIBundle = false,
        FoundAttachedCallBundle = false;
   for (unsigned i = 0, e = Call.getNumOperandBundles(); i < e; ++i) {
     OperandBundleUse BU = Call.getOperandBundleAt(i);
@@ -3621,14 +3621,14 @@ void Verifier::visitCallBase(CallBase &Call) {
             "Ptrauth bundle key operand must be an i32 constant", Call);
       Check(BU.Inputs[1]->getType()->isIntegerTy(64),
             "Ptrauth bundle discriminator operand must be an i64", Call);
-    } else if (Tag == LLVMContext::OB_kcfi) {
-      Check(!FoundKCFIBundle, "Multiple kcfi operand bundles", Call);
-      FoundKCFIBundle = true;
-      Check(BU.Inputs.size() == 1, "Expected exactly one kcfi bundle operand",
+    } else if (Tag == LLVMContext::OB_cfi) {
+      Check(!FoundCFIBundle, "Multiple cfi operand bundles", Call);
+      FoundCFIBundle = true;
+      Check(BU.Inputs.size() == 1, "Expected exactly one cfi bundle operand",
             Call);
       Check(isa<ConstantInt>(BU.Inputs[0]) &&
                 BU.Inputs[0]->getType()->isIntegerTy(32),
-            "Kcfi bundle operand must be an i32 constant", Call);
+            "Cfi bundle operand must be an i32 constant", Call);
     } else if (Tag == LLVMContext::OB_preallocated) {
       Check(!FoundPreallocatedBundle, "Multiple preallocated operand bundles",
             Call);

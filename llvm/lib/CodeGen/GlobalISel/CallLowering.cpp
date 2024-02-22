@@ -171,7 +171,7 @@ bool CallLowering::lowerCall(MachineIRBuilder &MIRBuilder, const CallBase &CB,
     }
   }
 
-  auto Bundle = CB.getOperandBundle(LLVMContext::OB_kcfi);
+  auto Bundle = CB.getOperandBundle(LLVMContext::OB_cfi);
   if (Bundle && CB.isIndirectCall()) {
     Info.CFIType = cast<ConstantInt>(Bundle->Inputs[0]);
     assert(Info.CFIType->getType()->isIntegerTy(32) && "Invalid CFI type");

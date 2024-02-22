@@ -5637,7 +5637,7 @@ RValue CodeGenFunction::EmitCall(const CGFunctionInfo &CallInfo,
 
   if (SanOpts.has(SanitizerKind::KCFI) &&
       !isa_and_nonnull<FunctionDecl>(TargetDecl))
-    EmitKCFIOperandBundle(ConcreteCallee, BundleList);
+    EmitCFIOperandBundle(ConcreteCallee, BundleList);
 
   if (const FunctionDecl *FD = dyn_cast_or_null<FunctionDecl>(CurFuncDecl))
     if (FD->hasAttr<StrictFPAttr>())
