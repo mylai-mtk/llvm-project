@@ -2674,12 +2674,23 @@ void CodeGenModule::CreateFunctionTypeMetadataForIcall(const FunctionDecl *FD,
       F->addTypeMetadata(0, llvm::ConstantAsMetadata::get(CrossDsoTypeId));
 }
 
-void CodeGenModule::setKCFIType(const FunctionDecl *FD, llvm::Function *F) {
+void CodeGenModule::setCFIType(const FunctionDecl *FD, llvm::Function *F) {
+  llvm::ConstantInt *CFIType = nullptr;
+  if (getTarget().getTriple().isRISCV() &&
+      getTarget().hasFeature("experimental-zicfilp") &&
+      LangOpts.BranchTargetEnforcement)
+    // TODO(mylai-mtk): Set label according to spec after the spec is freezed
+    CFIType = llvm::ConstantInt::get(Int32Ty, 0U);
+  else if (LangOpts.Sanitize.has(SanitizerKind::KCFI))
+    CFIType = CreateKCFITypeId(FD->getType());
+
+  if (!CFIType)
+    return;
+
   llvm::LLVMContext &Ctx = F->getContext();
   llvm::MDBuilder MDB(Ctx);
   F->setMetadata(llvm::LLVMContext::MD_cfi_type,
-                 llvm::MDNode::get(
-                     Ctx, MDB.createConstant(CreateKCFITypeId(FD->getType()))));
+                 llvm::MDNode::get(Ctx, MDB.createConstant(CFIType)));
 }
 
 static bool allowKCFIIdentifier(StringRef Name) {
@@ -2804,8 +2815,7 @@ void CodeGenModule::SetFunctionAttributes(GlobalDecl GD, llvm::Function *F,
       !CodeGenOpts.SanitizeCfiCanonicalJumpTables)
     CreateFunctionTypeMetadataForIcall(FD, F);
 
-  if (LangOpts.Sanitize.has(SanitizerKind::KCFI))
-    setKCFIType(FD, F);
+  setCFIType(FD, F);
 
   if (getLangOpts().OpenMP && FD->hasAttr<OMPDeclareSimdDeclAttr>())
     getOpenMPRuntime().emitDeclareSimdFunction(FD, F);
