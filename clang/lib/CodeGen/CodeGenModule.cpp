@@ -1106,6 +1106,12 @@ void CodeGenModule::Release() {
                                 CodeGenOpts.PatchableFunctionEntryOffset);
   }
 
+  if (getTarget().getTriple().isRISCV() &&
+      getTarget().hasFeature("experimental-zicfilp") &&
+      LangOpts.BranchTargetEnforcement) {
+    getModule().addModuleFlag(llvm::Module::Override, "zicfilp-cfi", 1);
+  }
+
   if (CodeGenOpts.CFProtectionReturn &&
       Target.checkCFProtectionReturnSupported(getDiags())) {
     // Indicate that we want to instrument return control flow protection.
