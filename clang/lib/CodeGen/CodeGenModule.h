@@ -1487,10 +1487,11 @@ public:
   }
 
   /// Set type metadata to the given function.
-  void setCFIType(const FunctionDecl *FD, llvm::Function *F);
+  void setCFIType(const CFITypeIdSchemeKind Scheme,
+                  const FunctionDecl *FD, llvm::Function *F);
 
   /// Emit CFI type identifier constants and remove unused identifiers.
-  void finalizeCFITypes();
+  void finalizeCFITypes(const CFITypeIdSchemeKind Scheme);
 
   /// Whether this function's return type has no side effects, and thus may
   /// be trivially discarded if it is unused.

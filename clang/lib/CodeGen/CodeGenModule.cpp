@@ -884,8 +884,9 @@ void CodeGenModule::Release() {
     CodeGenFunction(*this).EmitCfiCheckFail();
     CodeGenFunction(*this).EmitCfiCheckStub();
   }
-  if (getCFITypeIdScheme() == CFITypeIdSchemeKind::KCFI)
-    finalizeCFITypes();
+  if (const auto Scheme = getCFITypeIdScheme();
+      Scheme != CFITypeIdSchemeKind::None)
+    finalizeCFITypes(Scheme);
   emitAtAvailableLinkGuard();
   if (Context.getTargetInfo().getTriple().isWasm())
     EmitMainVoidAlias();
@@ -2692,12 +2693,102 @@ void CodeGenModule::CreateFunctionTypeMetadataForIcall(const FunctionDecl *FD,
       F->addTypeMetadata(0, llvm::ConstantAsMetadata::get(CrossDsoTypeId));
 }
 
-void CodeGenModule::setCFIType(const FunctionDecl *FD, llvm::Function *F) {
+void CodeGenModule::setCFIType(const CFITypeIdSchemeKind Scheme,
+                               const FunctionDecl *FD, llvm::Function *F) {
+  llvm::ConstantInt *CFIType = nullptr;
+  switch (Scheme) {
+  case CFITypeIdSchemeKind::None:
+    return;
+  case CFITypeIdSchemeKind::KCFI:
+    CFIType = CreateKCFITypeId(FD->getType());
+    break;
+  case CFITypeIdSchemeKind::RISCVZicfilpSimple:
+    // Simple labelling scheme always has CFIType = 0, which is not propagated
+    // to the backend, so we skip setting it here. The backend will insert
+    // `lpad 0` to appropriate locations based on whether the address can be
+    // reached by indirect jumps.
+    return;
+  case CFITypeIdSchemeKind::RISCVZicfilpFuncSig: {
+    if (FD->isMain())
+      // TODO(mylai-mtk): Correct this after spec knows how to handle different
+      // versions of main signatures. This current value is calculated from
+      // musl's assumed main function signature
+      CFIType = llvm::ConstantInt::get(Int32Ty, 0x3c362U);
+    else {
+      QualType RetTy = FD->getReturnType();
+      if (const auto *M = dyn_cast<CXXMethodDecl>(FD);
+          M && M->isVirtual() && RetTy->getPointeeCXXRecordDecl()) {
+        // Find the most "base" C++ type of return type for the case:
+        //   class Parent { virtual Parent foo(); };
+        //   class Child : public Parent { virtual Child foo() override; };
+        const CXXRecordDecl *MostBaseRecord = RetTy->getPointeeCXXRecordDecl();
+        for (const CXXMethodDecl *OM : M->overridden_methods()) {
+          const QualType OMRetTy = OM->getReturnType();
+          const CXXRecordDecl *R = OMRetTy->getPointeeCXXRecordDecl();
+          assert(R &&
+                 "Overridden method should also return a C++ record type!");
+          if (MostBaseRecord->isDerivedFrom(R)) {
+            MostBaseRecord = R;
+            RetTy = OMRetTy;
+          }
+        }
+      }
+      RetTy = RetTy.getCanonicalType();
+
+      llvm::SmallVector<QualType> ArgTys;
+      // Prepend the pointee type of `this` as the first argument
+      //if (const auto *M = dyn_cast<CXXMethodDecl>(FD); M) {
+      //  if (M->isVirtual()) {
+      //    // For virtual methods, we should reduce the pointee type of `this`
+      //    // to the most "base" type
+      //    const CXXRecordDecl *MostBaseRecord = M->getParent();
+      //    for (const CXXMethodDecl *OM : M->overridden_methods()) {
+      //      const CXXRecordDecl *R = OM->getParent();
+      //      if (MostBaseRecord->isDerivedFrom(R))
+      //        MostBaseRecord = R;
+      //    }
+      //
+      //    // Reconstruct qualifiers of `this` type
+      //    unsigned Qual = 0;
+      //    if (M->isConst())
+      //      Qual |= Qualifiers::Const;
+      //    if (M->isVolatile())
+      //      Qual |= Qualifiers::Volatile;
+      //    const QualType RecordTy{getContext().getRecordType(MostBaseRecord)
+      //                            .getTypePtr(),
+      //                            Qual};
+      //    ArgTys.push_back(getContext().getPointerType(RecordTy));
+      //  } else if (M->isInstance())
+      //    ArgTys.push_back(M->getThisType());
+      //}
+      //
+      //for (const ParmVarDecl *P : FD->parameters())
+      //  ArgTys.push_back(P->getType().getCanonicalType());
+
+      DEBUG_WITH_TYPE("zicfilp-cfi",
+        llvm::dbgs() << "Set Zicfilp-CFI type to func [";
+        FD->printQualifiedName(llvm::dbgs());
+        llvm::dbgs() << "] with effective func sig ["
+                     << RetTy.getAsString() << '(';
+        if (ArgTys.size()) {
+          auto AI = ArgTys.begin();
+          const auto AIE = ArgTys.end();
+          llvm::dbgs() << AI->getAsString();
+          while (++AI != AIE)
+            llvm::dbgs() << ", " << AI->getAsString();
+        }
+        llvm::dbgs() << ")]\n";
+      );
+      CFIType = getTargetCodeGenInfo().createCFITypeId(*this, RetTy, ArgTys);
+    }
+    break;
+  }
+  }
+
   llvm::LLVMContext &Ctx = F->getContext();
   llvm::MDBuilder MDB(Ctx);
   F->setMetadata(llvm::LLVMContext::MD_cfi_type,
-                 llvm::MDNode::get(
-                     Ctx, MDB.createConstant(CreateKCFITypeId(FD->getType()))));
+                 llvm::MDNode::get(Ctx, MDB.createConstant(CFIType)));
 }
 
 static bool allowKCFIIdentifier(StringRef Name) {
@@ -2709,7 +2800,7 @@ static bool allowKCFIIdentifier(StringRef Name) {
   });
 }
 
-void CodeGenModule::finalizeCFITypes() {
+void CodeGenModule::finalizeCFITypes(const CFITypeIdSchemeKind Scheme) {
   llvm::Module &M = getModule();
   for (auto &F : M.functions()) {
     // Remove CFI type metadata from non-address-taken local functions.
@@ -2720,6 +2811,8 @@ void CodeGenModule::finalizeCFITypes() {
     // Generate a constant with the expected KCFI type identifier for all
     // address-taken function declarations to support annotating indirectly
     // called assembly functions.
+    if (Scheme != CFITypeIdSchemeKind::KCFI)  // TODO(mylai-mtk): Maybe reorganize the conditions to improve readability
+      continue;
     if (!AddressTaken || !F.isDeclaration())
       continue;
 
@@ -2822,8 +2915,9 @@ void CodeGenModule::SetFunctionAttributes(GlobalDecl GD, llvm::Function *F,
       !CodeGenOpts.SanitizeCfiCanonicalJumpTables)
     CreateFunctionTypeMetadataForIcall(FD, F);
 
-  if (getCFITypeIdScheme() == CFITypeIdSchemeKind::KCFI)
-    setCFIType(FD, F);
+  if (const auto Scheme = getCFITypeIdScheme();
+      Scheme != CFITypeIdSchemeKind::None)
+    setCFIType(Scheme, FD, F);
 
   if (getLangOpts().OpenMP && FD->hasAttr<OMPDeclareSimdDeclAttr>())
     getOpenMPRuntime().emitDeclareSimdFunction(FD, F);
