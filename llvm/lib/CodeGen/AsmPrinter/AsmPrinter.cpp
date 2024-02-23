@@ -983,7 +983,8 @@ void AsmPrinter::emitFunctionHeader() {
   }
 
   // Emit KCFI type information before patchable-function-prefix nops.
-  emitKCFITypeId(*MF);
+  if (F.getParent()->getModuleFlag("kcfi"))
+    emitKCFITypeId(*MF);
 
   // Emit M NOPs for -fpatchable-function-entry=N,M where M>0. We arbitrarily
   // place prefix data before NOPs.
