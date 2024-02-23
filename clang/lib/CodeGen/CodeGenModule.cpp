@@ -1124,7 +1124,11 @@ void CodeGenModule::Release() {
     if (CodeGenOpts.PatchableFunctionEntryOffset)
       getModule().addModuleFlag(llvm::Module::Override, "kcfi-offset",
                                 CodeGenOpts.PatchableFunctionEntryOffset);
-  }
+  } else if (Scheme == CFITypeIdSchemeKind::RISCVZicfilpSimple)
+    getModule().addModuleFlag(llvm::Module::Override, "zicfilp-cfi-simple", 1);
+  else if (Scheme == CFITypeIdSchemeKind::RISCVZicfilpFuncSig)
+    getModule().addModuleFlag(llvm::Module::Override,
+                              "zicfilp-cfi-func-sig", 1);
 
   if (CodeGenOpts.CFProtectionReturn &&
       Target.checkCFProtectionReturnSupported(getDiags())) {
