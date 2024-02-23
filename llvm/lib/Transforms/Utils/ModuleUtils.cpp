@@ -161,7 +161,7 @@ void llvm::setKCFIType(Module &M, Function &F, StringRef MangledType) {
   LLVMContext &Ctx = M.getContext();
   MDBuilder MDB(Ctx);
   F.setMetadata(
-      LLVMContext::MD_kcfi_type,
+      LLVMContext::MD_cfi_type,
       MDNode::get(Ctx, MDB.createConstant(ConstantInt::get(
                            Type::getInt32Ty(Ctx),
                            static_cast<uint32_t>(xxHash64(MangledType))))));
