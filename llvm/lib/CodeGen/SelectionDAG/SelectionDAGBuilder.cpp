@@ -3152,7 +3152,8 @@ void SelectionDAGBuilder::visitInvoke(const InvokeInst &I) {
              {LLVMContext::OB_deopt, LLVMContext::OB_gc_transition,
               LLVMContext::OB_gc_live, LLVMContext::OB_funclet,
               LLVMContext::OB_cfguardtarget,
-              LLVMContext::OB_clang_arc_attachedcall}) &&
+              LLVMContext::OB_clang_arc_attachedcall,
+              LLVMContext::OB_cfi}) &&
          "Cannot lower invokes with arbitrary operand bundles yet!");
 
   const Value *Callee(I.getCalledOperand());
