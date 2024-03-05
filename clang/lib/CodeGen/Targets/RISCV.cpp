@@ -8,6 +8,7 @@
 
 #include "ABIInfoImpl.h"
 #include "TargetInfo.h"
+#include "llvm/Support/xxhash.h"
 
 using namespace clang;
 using namespace clang::CodeGen;
@@ -549,6 +550,31 @@ public:
     auto *Fn = cast<llvm::Function>(GV);
 
     Fn->addFnAttr("interrupt", Kind);
+  }
+
+  // TODO(mylai-mtk): Align with spec
+  llvm::ConstantInt*
+  createCFITypeId(const CodeGenModule &CGM,
+                  const QualType &RetTy,
+                  llvm::ArrayRef<QualType> ParamTys) const override {
+    std::string OutName;
+    llvm::raw_string_ostream Out(OutName);
+    MangleContext &MC = getABIInfo().getCXXABI().getMangleContext();
+
+    MC.mangleCanonicalTypeName(RetTy, Out);
+    Out << '(';
+    if (ParamTys.size()) {
+      auto PI = ParamTys.begin(), PIE = ParamTys.end();
+      MC.mangleCanonicalTypeName(*PI, Out);
+      while (++PI != PIE) {
+        Out << ',';
+        MC.mangleCanonicalTypeName(*PI, Out);
+      }
+    }
+    Out << ')';
+
+    const uint64_t LabelVal = llvm::xxHash64(OutName) & 0xFFFFFULL;
+    return llvm::ConstantInt::get(CGM.Int32Ty, static_cast<uint32_t>(LabelVal));
   }
 };
 } // namespace

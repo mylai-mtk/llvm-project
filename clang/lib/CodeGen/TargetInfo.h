@@ -402,6 +402,14 @@ public:
     return nullptr;
   }
 
+  /// Create a 32-bit CFI type id from the provided information.
+  virtual
+  llvm::ConstantInt *createCFITypeId(const CodeGenModule &CGM,
+                                     const QualType &RetTy,
+                                     llvm::ArrayRef<QualType> ParamTys) const {
+    return nullptr;
+  }
+
 protected:
   static std::string qualifyWindowsLibrary(StringRef Lib);
 
