@@ -69,6 +69,7 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ConvertUTF.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/RISCVISAUtils.h"
 #include "llvm/Support/TimeProfiler.h"
 #include "llvm/Support/xxhash.h"
 #include "llvm/TargetParser/RISCVISAInfo.h"
@@ -2827,6 +2828,39 @@ void CodeGenModule::CreateFunctionTypeMetadataForIcall(const FunctionDecl *FD,
   if (CodeGenOpts.SanitizeCfiCrossDso)
     if (auto CrossDsoTypeId = CreateCrossDsoCfiTypeId(MD))
       F->addTypeMetadata(0, llvm::ConstantAsMetadata::get(CrossDsoTypeId));
+}
+
+uint32_t
+CodeGenModule::calcRISCVZicfilpFuncSigLabel(const FunctionType &FT,
+                                            const bool IsCXXInstanceMethod,
+                                            const bool IsCXXVirtualMethod) {
+  std::string OutName;
+  llvm::raw_string_ostream Out(OutName);
+  MangleContext &MC = getCXXABI().getMangleContext();
+  cast<ItaniumMangleContext>(MC).mangleForRISCVZicfilpFuncSigLabel(
+      FT, IsCXXInstanceMethod, IsCXXVirtualMethod, Out);
+  return llvm::RISCVISAUtils::zicfilpFuncSigHash(OutName);
+}
+
+uint32_t CodeGenModule::calcRISCVZicfilpFuncSigLabel(const FunctionDecl &FD) {
+  if (FD.isMain())
+    // All main functions use `int main(int, char**)` for label calculation
+    // according to psABI spec. This value is the pre-calculated label.
+    return 0xd0639;
+
+  if (isa<CXXDestructorDecl>(FD))
+    // All destructors use `void (void*)` for label calculation according to the
+    // psABI spec. This value is the pre-calculated label.
+    return 0x639c2;
+
+  bool IsCXXInstanceMethod = false;
+  bool IsCXXVirtualMethod = false;
+  if (const auto *const MD = dyn_cast<CXXMethodDecl>(&FD)) {
+    IsCXXInstanceMethod = MD->isInstance();
+    IsCXXVirtualMethod = MD->isVirtual();
+  }
+  return calcRISCVZicfilpFuncSigLabel(*FD.getFunctionType(),
+                                      IsCXXInstanceMethod, IsCXXVirtualMethod);
 }
 
 void CodeGenModule::setKCFIType(const FunctionDecl *FD, llvm::Function *F) {
