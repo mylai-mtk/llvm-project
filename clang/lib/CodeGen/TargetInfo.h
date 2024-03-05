@@ -402,6 +402,18 @@ public:
     return nullptr;
   }
 
+  /// Calculate CFI type id from the provided information.
+  virtual llvm::APInt calcCFITypeId(const FunctionDecl &FD) const {
+    return calcCFITypeId(*FD.getFunctionType(), false, false);
+  }
+
+  /// Calculate CFI type id from the provided information.
+  virtual llvm::APInt calcCFITypeId(const FunctionType &FT,
+                                    const bool IsCXXInstanceMethod,
+                                    const bool IsCXXVirtualMethod) const {
+    return llvm::APInt{};
+  }
+
 protected:
   static std::string qualifyWindowsLibrary(StringRef Lib);
 

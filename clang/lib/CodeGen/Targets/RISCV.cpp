@@ -8,6 +8,7 @@
 
 #include "ABIInfoImpl.h"
 #include "TargetInfo.h"
+#include "llvm/Support/MD5.h"
 
 using namespace clang;
 using namespace clang::CodeGen;
@@ -549,6 +550,60 @@ public:
     auto *Fn = cast<llvm::Function>(GV);
 
     Fn->addFnAttr("interrupt", Kind);
+  }
+
+public:
+  // TODO(mylai-mtk): Align with spec
+  llvm::APInt calcCFITypeId(const FunctionDecl &FD) const override {
+    if (FD.isMain())
+      // All main functions use `int main(int, char**)` for label calculation
+      // according to psABI spec. This value is the pre-calculated label.
+      return llvm::APInt(20, 0xd0639);
+
+    if (isa<CXXDestructorDecl>(FD))
+      // All destructors use `void (void*)` for label calculation according to
+      // the psABI spec. This value is the pre-calculated label.
+      return llvm::APInt(20, 0x639c2);
+
+    bool IsCXXInstanceMethod = false;
+    bool IsCXXVirtualMethod = false;
+    if (const auto * const MD = dyn_cast<CXXMethodDecl>(&FD)) {
+      IsCXXInstanceMethod = MD->isInstance();
+      IsCXXVirtualMethod = MD->isVirtual();
+    }
+
+    DEBUG_WITH_TYPE("zicfilp-cfi",
+      llvm::dbgs() << "The CFI label of function [";
+      FD.printQualifiedName(llvm::dbgs());
+      llvm::dbgs() << "] is calculated with signature ["
+                   << QualType(FD.getFunctionType(), 0).getAsString() << "]\n";
+    );
+    return calcCFITypeId(*FD.getFunctionType(),
+                         IsCXXInstanceMethod,
+                         IsCXXVirtualMethod);
+  }
+
+  // TODO(mylai-mtk): Align with spec
+  llvm::APInt calcCFITypeId(const FunctionType &FT,
+                            const bool IsCXXInstanceMethod,
+                            const bool IsCXXVirtualMethod) const override {
+    std::string OutName;
+    llvm::raw_string_ostream Out(OutName);
+    MangleContext &MC = getABIInfo().getCXXABI().getMangleContext();
+    cast<ItaniumMangleContext>(MC).
+        mangleForRISCVZicfilpFuncSigLabel(FT, IsCXXInstanceMethod,
+                                          IsCXXVirtualMethod, Out);
+
+    const llvm::APInt Ret(20, llvm::MD5Hash(OutName) & 0xFFFFFULL);
+
+    DEBUG_WITH_TYPE("zicfilp-cfi",
+      llvm::dbgs() << "FunctionType [" << QualType(&FT, 0).getAsString() << "] "
+                   "is mangled into [" << OutName << "], then hashed into [";
+      Ret.print(llvm::dbgs(), /*isSigned=*/false);
+      llvm::dbgs() << "] for CFI label calculation\n";
+    );
+
+    return Ret;
   }
 };
 } // namespace
