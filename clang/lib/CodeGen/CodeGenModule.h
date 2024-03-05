@@ -301,6 +301,8 @@ public:
   enum class CFITypeIdSchemeKind {
     None = 0,
     KCFI,
+    RISCVZicfilpSimple,
+    RISCVZicfilpFuncSig,
   };
 
 private:

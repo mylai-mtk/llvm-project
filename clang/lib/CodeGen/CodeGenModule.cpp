@@ -444,6 +444,19 @@ CodeGenModule::CodeGenModule(ASTContext &C,
   // Setup CFITypeIdScheme
   if (LangOpts.Sanitize.has(SanitizerKind::KCFI))
     CFITypeIdScheme = CFITypeIdSchemeKind::KCFI;
+  else if (Target.getTriple().isRISCV() &&
+           Target.hasFeature("experimental-zicfilp"))
+    switch (LangOpts.getZicfilpLabelScheme()) {
+      case LangOptionsBase::RISCVZicfilpLabelSchemeKind::None:
+        CFITypeIdScheme = CFITypeIdSchemeKind::None;
+        break;
+      case LangOptionsBase::RISCVZicfilpLabelSchemeKind::Simple:
+        CFITypeIdScheme = CFITypeIdSchemeKind::RISCVZicfilpSimple;
+        break;
+      case LangOptionsBase::RISCVZicfilpLabelSchemeKind::FuncSig:
+        CFITypeIdScheme = CFITypeIdSchemeKind::RISCVZicfilpFuncSig;
+        break;
+    }
   else
     CFITypeIdScheme = CFITypeIdSchemeKind::None;
 }
