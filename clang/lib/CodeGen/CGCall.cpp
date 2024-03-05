@@ -5635,7 +5635,7 @@ RValue CodeGenFunction::EmitCall(const CGFunctionInfo &CallInfo,
   SmallVector<llvm::OperandBundleDef, 1> BundleList =
       getBundlesForFunclet(CalleePtr);
 
-  if (SanOpts.has(SanitizerKind::KCFI) &&
+  if (CGM.getCFITypeIdScheme() == CodeGenModule::CFITypeIdSchemeKind::KCFI &&
       !isa_and_nonnull<FunctionDecl>(TargetDecl))
     EmitKCFIOperandBundle(ConcreteCallee, BundleList);
 

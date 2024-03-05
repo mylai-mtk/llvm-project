@@ -440,6 +440,12 @@ CodeGenModule::CodeGenModule(ASTContext &C,
       }
     ModuleNameHash = llvm::getUniqueInternalLinkagePostfix(Path);
   }
+
+  // Setup CFITypeIdScheme
+  if (LangOpts.Sanitize.has(SanitizerKind::KCFI))
+    CFITypeIdScheme = CFITypeIdSchemeKind::KCFI;
+  else
+    CFITypeIdScheme = CFITypeIdSchemeKind::None;
 }
 
 CodeGenModule::~CodeGenModule() {}
@@ -865,7 +871,7 @@ void CodeGenModule::Release() {
     CodeGenFunction(*this).EmitCfiCheckFail();
     CodeGenFunction(*this).EmitCfiCheckStub();
   }
-  if (LangOpts.Sanitize.has(SanitizerKind::KCFI))
+  if (getCFITypeIdScheme() == CFITypeIdSchemeKind::KCFI)
     finalizeCFITypes();
   emitAtAvailableLinkGuard();
   if (Context.getTargetInfo().getTriple().isWasm())
@@ -1097,7 +1103,8 @@ void CodeGenModule::Release() {
                               CodeGenOpts.SanitizeCfiCanonicalJumpTables);
   }
 
-  if (LangOpts.Sanitize.has(SanitizerKind::KCFI)) {
+  if (const auto Scheme = getCFITypeIdScheme();
+      Scheme == CFITypeIdSchemeKind::KCFI) {
     getModule().addModuleFlag(llvm::Module::Override, "kcfi", 1);
     // KCFI assumes patchable-function-prefix is the same for all indirectly
     // called functions. Store the expected offset for code generation.
@@ -2798,7 +2805,7 @@ void CodeGenModule::SetFunctionAttributes(GlobalDecl GD, llvm::Function *F,
       !CodeGenOpts.SanitizeCfiCanonicalJumpTables)
     CreateFunctionTypeMetadataForIcall(FD, F);
 
-  if (LangOpts.Sanitize.has(SanitizerKind::KCFI))
+  if (getCFITypeIdScheme() == CFITypeIdSchemeKind::KCFI)
     setCFIType(FD, F);
 
   if (getLangOpts().OpenMP && FD->hasAttr<OMPDeclareSimdDeclAttr>())

@@ -298,6 +298,11 @@ public:
 
   typedef std::vector<Structor> CtorList;
 
+  enum class CFITypeIdSchemeKind {
+    None = 0,
+    KCFI,
+  };
+
 private:
   ASTContext &Context;
   const LangOptions &LangOpts;
@@ -347,6 +352,9 @@ private:
   /// used. If a decl is in this, then it is known to have not been referenced
   /// yet.
   llvm::DenseMap<StringRef, GlobalDecl> DeferredDecls;
+
+  /// The scheme used to calculate CFI type ID
+  CFITypeIdSchemeKind CFITypeIdScheme;
 
   /// This is a list of deferred decls which we have seen that *are* actually
   /// referenced. These get code generated when the module is done.
@@ -1470,6 +1478,11 @@ public:
   /// Create and attach type metadata to the given function.
   void CreateFunctionTypeMetadataForIcall(const FunctionDecl *FD,
                                           llvm::Function *F);
+
+  /// Get enabled scheme for calculating CFI type ID.
+  CFITypeIdSchemeKind getCFITypeIdScheme() const {
+    return CFITypeIdScheme;
+  }
 
   /// Set type metadata to the given function.
   void setCFIType(const FunctionDecl *FD, llvm::Function *F);
