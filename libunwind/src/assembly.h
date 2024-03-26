@@ -63,6 +63,33 @@
 #  endif
 # endif
 # define SEPARATOR ;
+
+# if defined(__riscv_zicfilp) && defined(__riscv_landing_pad)
+#  if defined(__riscv_landing_pad_simple)
+#   define RISCV_LPAD(label) .align 4 SEPARATOR lpad 0
+#   define RISCV_ZICFILP_FEATURE_1_AND (1 << 0)
+#  elif defined(__riscv_landing_pad_func_sig)
+#   define RISCV_LPAD(label) .align 4 SEPARATOR lpad label
+#   define RISCV_ZICFILP_FEATURE_1_AND (1 << 2)
+#  else
+#   error "Unsupported RISC-V Zicfilp CFI scheme"
+#  endif
+
+  .pushsection ".note.gnu.property", "a" SEPARATOR                             \
+  .balign 8 SEPARATOR                                                          \
+  .word 4 SEPARATOR                                                            \
+  .word 0x10 SEPARATOR                                                         \
+  .word 0x5 SEPARATOR                                                          \
+  .asciz "GNU" SEPARATOR                                                       \
+  .word 0xc0000000 SEPARATOR /* GNU_PROPERTY_RISCV_FEATURE_1_AND */            \
+  .word 4 SEPARATOR                                                            \
+  .word RISCV_ZICFILP_FEATURE_1_AND SEPARATOR                                  \
+  .word 0 SEPARATOR                                                            \
+  .popsection SEPARATOR
+# else
+#  define RISCV_LPAD(label)
+# endif
+
 #else
 #define SEPARATOR ;
 #endif
@@ -262,7 +289,8 @@ aliasname:                                                                     \
   PPC64_OPD1                                                                   \
   SYMBOL_NAME(name):                                                           \
   PPC64_OPD2                                                                   \
-  AARCH64_BTI
+  AARCH64_BTI                                                                  \
+  RISCV_LPAD(0)
 #endif
 
 #if defined(__arm__)
