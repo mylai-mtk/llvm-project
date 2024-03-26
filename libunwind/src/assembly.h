@@ -63,8 +63,47 @@
 #  endif
 # endif
 # define SEPARATOR ;
+
+# if defined(__riscv_zicfilp) && defined(__riscv_landing_pad)
+#  define NT_GNU_PROPERTY_TYPE_0 (5)
+#  define GNU_PROPERTY_RISCV_FEATURE_1_AND (0xc0000000)
+
+#  if defined(__riscv_landing_pad_unlabeled)
+#   define RISCV_LPAD(label) .align 4 SEPARATOR lpad 0
+#   define GNU_PROPERTY_RISCV_FEATURE_1_CFI_LP_UNLABELED (1 << 0)
+#   define RISCV_ZICFILP_FEATURE_1_AND                                         \
+           GNU_PROPERTY_RISCV_FEATURE_1_CFI_LP_UNLABELED
+#  elif defined(__riscv_landing_pad_func_sig)
+#   define RISCV_LPAD(label) .align 4 SEPARATOR lpad label
+#   define GNU_PROPERTY_RISCV_FEATURE_1_CFI_LP_FUNC_SIG  (1 << 2)
+#   define RISCV_ZICFILP_FEATURE_1_AND                                         \
+           GNU_PROPERTY_RISCV_FEATURE_1_CFI_LP_FUNC_SIG
+#  else
+#   error "Unsupported RISC-V Zicfilp CFI scheme"
+#  endif
+
+  .pushsection ".note.gnu.property", "a" SEPARATOR                             \
+  .balign (__riscv_xlen >> 3) SEPARATOR                                        \
+  .4byte 4 SEPARATOR                                /* n_namsz */              \
+  .4byte desc_end - desc_begin SEPARATOR            /* n_descsz */             \
+  .4byte NT_GNU_PROPERTY_TYPE_0 SEPARATOR           /* n_type */               \
+  .asciz "GNU" SEPARATOR                            /* n_name */               \
+desc_begin:                                                                    \
+  .balign (__riscv_xlen >> 3) SEPARATOR                                        \
+  .4byte GNU_PROPERTY_RISCV_FEATURE_1_AND SEPARATOR /* pr_type */              \
+  .4byte 4 SEPARATOR                                /* pr_datasz */            \
+  .4byte RISCV_ZICFILP_FEATURE_1_AND SEPARATOR      /* pr_data */              \
+  .balign (__riscv_xlen >> 3) SEPARATOR             /* pr_padding */           \
+desc_end:                                                                      \
+  .popsection SEPARATOR
+
+# else
+#  define RISCV_LPAD(label)
+# endif
+
 #else
 #define SEPARATOR ;
+#define RISCV_LPAD(label)
 #endif
 
 #if defined(__powerpc64__) && (!defined(_CALL_ELF) || _CALL_ELF == 1) &&       \
@@ -277,7 +316,8 @@ aliasname:                                                                     \
   PPC64_OPD1                                                                   \
   SYMBOL_NAME(name):                                                           \
   PPC64_OPD2                                                                   \
-  AARCH64_BTI
+  AARCH64_BTI                                                                  \
+  RISCV_LPAD(0)
 #endif
 
 #if defined(__arm__)
