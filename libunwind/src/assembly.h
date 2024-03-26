@@ -63,6 +63,21 @@
 #  endif
 # endif
 # define SEPARATOR ;
+
+# ifdef __riscv_zicfilp
+  .pushsection ".note.gnu.property", "a" SEPARATOR                             \
+  .balign 8 SEPARATOR                                                          \
+  .word 4 SEPARATOR                                                            \
+  .word 0x10 SEPARATOR                                                         \
+  .word 0x5 SEPARATOR                                                          \
+  .asciz "GNU" SEPARATOR                                                       \
+  .word 0xc0000000 SEPARATOR /* GNU_PROPERTY_RISCV_FEATURE_1_AND */            \
+  .word 4 SEPARATOR                                                            \
+  .word 1 SEPARATOR /* GNU_PROPERTY_RISCV_FEATURE_1_CFI_LP_SIMPLE */           \
+  .word 0 SEPARATOR                                                            \
+  .popsection SEPARATOR
+# endif
+
 #else
 #define SEPARATOR ;
 #endif
