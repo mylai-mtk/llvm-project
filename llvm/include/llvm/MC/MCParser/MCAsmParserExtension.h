@@ -64,7 +64,11 @@ public:
   }
 
   SourceMgr &getSourceManager() { return getParser().getSourceManager(); }
+
   MCStreamer &getStreamer() { return getParser().getStreamer(); }
+  const MCStreamer &getStreamer() const {
+    return const_cast<MCAsmParserExtension *>(this)->getStreamer();
+  }
 
   bool Warning(SMLoc L, const Twine &Msg) {
     return getParser().Warning(L, Msg);

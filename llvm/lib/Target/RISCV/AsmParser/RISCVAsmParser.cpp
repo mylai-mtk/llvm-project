@@ -8,6 +8,7 @@
 
 #include "MCTargetDesc/RISCVAsmBackend.h"
 #include "MCTargetDesc/RISCVBaseInfo.h"
+#include "MCTargetDesc/RISCVELFStreamer.h"
 #include "MCTargetDesc/RISCVInstPrinter.h"
 #include "MCTargetDesc/RISCVMCExpr.h"
 #include "MCTargetDesc/RISCVMCTargetDesc.h"
@@ -38,6 +39,7 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/RISCVAttributes.h"
+#include "llvm/Support/RISCVISAUtils.h"
 #include "llvm/TargetParser/RISCVISAInfo.h"
 
 #include <limits>
@@ -81,6 +83,8 @@ class RISCVAsmParser : public MCTargetAsmParser {
 
   SmallVector<ParserOptionsSet, 4> ParserOptionsStack;
   ParserOptionsSet ParserOptions;
+
+  const MCSymbol *LastParsedLabel = nullptr;
 
   SMLoc getLoc() const { return getParser().getTok().getLoc(); }
   bool isRV64() const { return getSTI().hasFeature(RISCV::Feature64Bit); }
@@ -200,6 +204,7 @@ class RISCVAsmParser : public MCTargetAsmParser {
   ParseStatus parseMemOpBaseReg(OperandVector &Operands);
   ParseStatus parseZeroOffsetMemOp(OperandVector &Operands);
   ParseStatus parseOperandWithModifier(OperandVector &Operands);
+  ParseStatus parseLpadHash(OperandVector &Operands);
   ParseStatus parseBareSymbol(OperandVector &Operands);
   ParseStatus parseCallSymbol(OperandVector &Operands);
   ParseStatus parsePseudoJumpSymbol(OperandVector &Operands);
@@ -325,6 +330,12 @@ public:
     if (AddBuildAttributes)
       getTargetStreamer().emitTargetAttributes(STI, /*EmitStackAlign*/ false);
   }
+
+  void onLabelParsed(MCSymbol *Label) override { LastParsedLabel = Label; }
+
+  // Return the location-anchoring symbol for an lpad insn if possible. May
+  // return nullptr if not available
+  const MCSymbol *getLpadInsnAnchorSym() const;
 };
 
 /// RISCVOperand - Instances of this class represent a parsed machine
@@ -1267,7 +1278,8 @@ public:
     RISCVMCExpr::VariantKind VK = RISCVMCExpr::VK_RISCV_None;
     bool IsConstant = evaluateConstantImm(Expr, Imm, VK);
 
-    if (IsConstant)
+    if (IsConstant && (VK != RISCVMCExpr::VK_RISCV_LPAD_LABEL &&
+                       VK != RISCVMCExpr::VK_RISCV_LPAD_HASH))
       Inst.addOperand(
           MCOperand::createImm(fixImmediateForRV32(Imm, IsRV64Imm)));
     else
@@ -2089,6 +2101,8 @@ ParseStatus RISCVAsmParser::parseOperandWithModifier(OperandVector &Operands) {
   RISCVMCExpr::VariantKind VK = RISCVMCExpr::getVariantKindForName(Identifier);
   if (VK == RISCVMCExpr::VK_RISCV_Invalid)
     return Error(getLoc(), "unrecognized operand modifier");
+  if (VK == RISCVMCExpr::VK_RISCV_LPAD_HASH)
+    return parseLpadHash(Operands);
 
   getParser().Lex(); // Eat the identifier
   if (parseToken(AsmToken::LParen, "expected '('"))
@@ -2101,6 +2115,33 @@ ParseStatus RISCVAsmParser::parseOperandWithModifier(OperandVector &Operands) {
   const MCExpr *ModExpr = RISCVMCExpr::create(SubExpr, VK, getContext());
   Operands.push_back(RISCVOperand::createImm(ModExpr, S, E, isRV64()));
   return ParseStatus::Success;
+}
+
+/// Parse the \c lpad_hash("<cfi_token_string>") part of the operand \c
+/// %lpad_hash("<cfi_token_string>")
+ParseStatus RISCVAsmParser::parseLpadHash(OperandVector &Operands) {
+  MCAsmParser &Parser = getParser();
+  Parser.Lex(); // Eat `lpad_hash`
+  if (parseToken(AsmToken::LParen, "expected '('"))
+    return ParseStatus::Failure;
+
+  const AsmToken &CFITokStringTok = getTok();
+  if (CFITokStringTok.getKind() != AsmToken::String)
+    return TokError("expected string constant");
+
+  const StringRef CFITokString = CFITokStringTok.getStringContents();
+  const uint32_t CFITokVal = RISCVISAUtils::zicfilpFuncSigHash(CFITokString);
+
+  RISCVTargetStreamer &RTS = getTargetStreamer();
+  if (const MCSymbol *const MapSym = RTS.emitLpadMappingSymbol(CFITokString))
+    RTS.recordLpadInfo(*MapSym, CFITokVal);
+  const auto *const CFITokExpr =
+      RISCVLpadHashMCExpr::create(CFITokVal, CFITokString, getContext());
+  Operands.push_back(
+      RISCVOperand::createImm(CFITokExpr, CFITokStringTok.getLoc(),
+                              CFITokStringTok.getEndLoc(), isRV64()));
+  Parser.Lex(); // Eat the CFI token string, quotes included
+  return parseToken(AsmToken::RParen, "expected ')'");
 }
 
 ParseStatus RISCVAsmParser::parseBareSymbol(OperandVector &Operands) {
@@ -3894,10 +3935,95 @@ bool RISCVAsmParser::processInstruction(MCInst &Inst, SMLoc IDLoc,
 
     return false;
   }
+  case RISCV::AUIPC: {
+    const bool IsLpad = Inst.getOperand(0).getReg() == RISCV::X0;
+    if (!IsLpad)
+      break;
+
+    // Convert lpad insn's label to RISCVMCExpr, so LPAD relocation would be
+    // emitted. This case is `lpad <imm>` parsed by the AsmParser.
+    if (const MCOperand &OrigCFITokMCOp = Inst.getOperand(1);
+        OrigCFITokMCOp.isImm()) {
+      MCContext &Ctx = getContext();
+      const uint32_t CFITok = OrigCFITokMCOp.getImm();
+      if (const MCSymbol *const LpadAnchorSym = getLpadInsnAnchorSym())
+        getTargetStreamer().recordLpadInfo(*LpadAnchorSym, CFITok);
+      const auto *const CFITokConstExpr = MCConstantExpr::create(CFITok, Ctx);
+      const auto *const CFITokRVE = RISCVMCExpr::create(
+          CFITokConstExpr, RISCVMCExpr::VK_RISCV_LPAD_LABEL, Ctx);
+      const auto NewCFITokMCOp = MCOperand::createExpr(CFITokRVE);
+      assert(Inst.getNumOperands() == 2 &&
+             "lpad insn should have 2 operands in its auipc form");
+      emitToStreamer(Out, MCInstBuilder(RISCV::AUIPC)
+                              .addReg(RISCV::X0)
+                              .addOperand(NewCFITokMCOp));
+      return false;
+    }
+    break;
+  }
   }
 
   emitToStreamer(Out, Inst);
   return false;
+}
+
+const MCSymbol *RISCVAsmParser::getLpadInsnAnchorSym() const {
+  if (!LastParsedLabel)
+    return nullptr;
+
+  const MCStreamer &Streamer = getStreamer();
+  const MCFragment *const LabelFrag =
+      LastParsedLabel->getFragment(/*SetUsed=*/false);
+  if (!LabelFrag)
+    return nullptr;
+
+  const MCFragment *const CurFrag = Streamer.getCurrentFragment();
+  if (!CurFrag)
+    return nullptr;
+
+  const SmallVectorImpl<char> &LabelFragData =
+      cast<MCDataFragment>(LabelFrag)->getContents();
+  const uint64_t LabelOffset = LastParsedLabel->getOffset();
+  if (LabelFrag == CurFrag && LabelFragData.size() == LabelOffset)
+    return LastParsedLabel;
+
+  // Check that only nops are added after `LastParsedLabel`
+  const bool hasStdExtC = getAvailableFeatures()[Feature_HasStdExtCBit];
+  const auto BufferOnlyContainsNopPred = [=](const ArrayRef<char> Buf) -> bool {
+    for (const char *It = Buf.begin(), *const End = Buf.end(); It < End;) {
+      if (support::endian::read<uint32_t>(It, llvm::endianness::little) == 19)
+        // `addi x0, x0, 0`, `nop`
+        It += 4;
+      else if (hasStdExtC && support::endian::read<uint16_t>(
+                                 It, llvm::endianness::little) == 1)
+        // `c.addi x0, 0`, `c.nop`
+        It += 2;
+      else
+        return false;
+    }
+    return true;
+  };
+  if (!BufferOnlyContainsNopPred(
+          {LabelFragData.begin() + LabelOffset, LabelFragData.end()}))
+    return nullptr;
+  const MCFragment *F = LabelFrag->getNext();
+  const auto FragWritesNopPred = [&](const MCFragment &F) -> bool {
+    if (const auto *const DF = dyn_cast<MCDataFragment>(&F))
+      return BufferOnlyContainsNopPred(DF->getContents());
+    return isa<MCAlignFragment>(F) || isa<MCBoundaryAlignFragment>(F) ||
+           isa<MCNopsFragment>(F);
+  };
+  while (F != CurFrag) {
+    if (!F)
+      return nullptr;
+    if (!FragWritesNopPred(*F))
+      return nullptr;
+    F = F->getNext();
+  }
+  if (!FragWritesNopPred(*CurFrag))
+    return nullptr;
+
+  return LastParsedLabel;
 }
 
 extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeRISCVAsmParser() {
