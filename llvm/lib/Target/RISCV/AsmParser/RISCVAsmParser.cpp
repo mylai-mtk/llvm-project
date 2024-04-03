@@ -38,6 +38,7 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/RISCVAttributes.h"
+#include "llvm/Support/RISCVISAUtils.h"
 #include "llvm/TargetParser/RISCVISAInfo.h"
 
 #include <limits>
@@ -199,6 +200,7 @@ class RISCVAsmParser : public MCTargetAsmParser {
   ParseStatus parseMemOpBaseReg(OperandVector &Operands);
   ParseStatus parseZeroOffsetMemOp(OperandVector &Operands);
   ParseStatus parseOperandWithModifier(OperandVector &Operands);
+  ParseStatus parseLpadLabel(OperandVector &Operands);
   ParseStatus parseBareSymbol(OperandVector &Operands);
   ParseStatus parseCallSymbol(OperandVector &Operands);
   ParseStatus parsePseudoJumpSymbol(OperandVector &Operands);
@@ -2034,6 +2036,8 @@ ParseStatus RISCVAsmParser::parseOperandWithModifier(OperandVector &Operands) {
   RISCVMCExpr::VariantKind VK = RISCVMCExpr::getVariantKindForName(Identifier);
   if (VK == RISCVMCExpr::VK_RISCV_Invalid)
     return Error(getLoc(), "unrecognized operand modifier");
+  if (VK == RISCVMCExpr::VK_RISCV_LPAD_LABEL)
+    return parseLpadLabel(Operands);
 
   getParser().Lex(); // Eat the identifier
   if (parseToken(AsmToken::LParen, "expected '('"))
@@ -2046,6 +2050,29 @@ ParseStatus RISCVAsmParser::parseOperandWithModifier(OperandVector &Operands) {
   const MCExpr *ModExpr = RISCVMCExpr::create(SubExpr, VK, getContext());
   Operands.push_back(RISCVOperand::createImm(ModExpr, S, E, isRV64()));
   return ParseStatus::Success;
+}
+
+/// Parse the \c lpad_label("<label>") part of the operand
+/// \c %lpad_label("<label>")
+///
+/// Result in an integer constant that is \c <label> transformed according to
+/// the spec, which means that the \c lpad_label modifier is dropped, since
+/// \ref RISCVMCExpr cannot hold string constants as subexpr, and we're not
+/// interested in distinguishing these from normal integer constants for now
+ParseStatus RISCVAsmParser::parseLpadLabel(OperandVector &Operands) {
+  getParser().Lex(); // Eat `lpad_label`
+  if (parseToken(AsmToken::LParen, "expected '('"))
+    return ParseStatus::Failure;
+  if (getTok().getKind() != AsmToken::String)
+    return TokError("expected string constant");
+
+  const StringRef LabelString = getTok().getStringContents();
+  const uint32_t LabelVal = RISCVISAUtils::zicfilpFuncSigHash(LabelString);
+  const MCExpr *LabelExpr = MCConstantExpr::create(LabelVal, getContext());
+  Operands.push_back(RISCVOperand::createImm(LabelExpr, getTok().getLoc(),
+                                             getTok().getEndLoc(), isRV64()));
+  getParser().Lex(); // Eat the label string
+  return parseToken(AsmToken::RParen, "expected ')'");
 }
 
 ParseStatus RISCVAsmParser::parseBareSymbol(OperandVector &Operands) {
