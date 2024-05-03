@@ -1594,6 +1594,7 @@ template <class ELFT> void SharedFile::parse() {
       if (sym.getBinding() != STB_WEAK &&
           ctx.arg.unresolvedSymbolsInShlib != UnresolvedPolicy::Ignore)
         requiredSymbols.push_back(s);
+      symbols[firstGlobal + i] = s;
       continue;
     }
 
@@ -1618,6 +1619,7 @@ template <class ELFT> void SharedFile::parse() {
       s->dsoDefined = true;
       if (s->file == this)
         s->versionId = ver;
+      symbols[firstGlobal + i] = s;
     }
 
     // Also add the symbol with the versioned name to handle undefined symbols
@@ -1636,6 +1638,7 @@ template <class ELFT> void SharedFile::parse() {
     s->dsoDefined = true;
     if (s->file == this)
       s->versionId = idx;
+    symbols[firstGlobal + i] = s;
   }
 }
 
