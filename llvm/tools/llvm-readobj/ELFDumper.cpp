@@ -5133,12 +5133,16 @@ static std::string getGNUProperty(uint32_t Type, uint32_t DataSize,
     return OS.str();
   case GNU_PROPERTY_AARCH64_FEATURE_1_AND:
   case GNU_PROPERTY_X86_FEATURE_1_AND:
+    static_assert(GNU_PROPERTY_AARCH64_FEATURE_1_AND ==
+                  GNU_PROPERTY_RISCV_FEATURE_1_AND,
+                  "GNU_PROPERTY_RISCV_FEATURE_1_AND should equal "
+                  "GNU_PROPERTY_AARCH64_FEATURE_1_AND, otherwise "
+                  "GNU_PROPERTY_RISCV_FEATURE_1_AND would be skipped!");
 
-    if (Type == GNU_PROPERTY_AARCH64_FEATURE_1_AND) {
-      if (Target == ELF::EM_RISCV)
-        OS << "riscv feature: ";
-      else
-        OS << "aarch64 feature: ";
+    if (Target == EM_AARCH64 && Type == GNU_PROPERTY_AARCH64_FEATURE_1_AND) {
+      OS << "aarch64 feature: ";
+    } else if (Target == EM_RISCV && Type == GNU_PROPERTY_RISCV_FEATURE_1_AND) {
+      OS << "riscv feature: ";
     } else {
       OS << "x86 feature: ";
     }
@@ -5153,15 +5157,14 @@ static std::string getGNUProperty(uint32_t Type, uint32_t DataSize,
       return OS.str();
     }
 
-    if (Type == GNU_PROPERTY_AARCH64_FEATURE_1_AND) {
-      if (Target == ELF::EM_RISCV) {
-        DumpBit(GNU_PROPERTY_RISCV_FEATURE_1_ZICFILP, "ZICFILP");
-        DumpBit(GNU_PROPERTY_RISCV_FEATURE_1_ZICFISS, "ZICFISS");
-      } else {
-        DumpBit(GNU_PROPERTY_AARCH64_FEATURE_1_BTI, "BTI");
-        DumpBit(GNU_PROPERTY_AARCH64_FEATURE_1_PAC, "PAC");
-        DumpBit(GNU_PROPERTY_AARCH64_FEATURE_1_GCS, "GCS");
-      }
+    if (Target == EM_AARCH64 && Type == GNU_PROPERTY_AARCH64_FEATURE_1_AND) {
+      DumpBit(GNU_PROPERTY_AARCH64_FEATURE_1_BTI, "BTI");
+      DumpBit(GNU_PROPERTY_AARCH64_FEATURE_1_PAC, "PAC");
+      DumpBit(GNU_PROPERTY_AARCH64_FEATURE_1_GCS, "GCS");
+    } else if (Target == EM_RISCV && Type == GNU_PROPERTY_RISCV_FEATURE_1_AND) {
+      DumpBit(GNU_PROPERTY_RISCV_FEATURE_1_CFI_LP_SIMPLE, "ZICFILP (Simple)");
+      DumpBit(GNU_PROPERTY_RISCV_FEATURE_1_CFI_SS, "ZICFISS");
+      DumpBit(GNU_PROPERTY_RISCV_FEATURE_1_CFI_LP_FUNC_SIG, "ZICFILP (FuncSig)");
     } else {
       DumpBit(GNU_PROPERTY_X86_FEATURE_1_IBT, "IBT");
       DumpBit(GNU_PROPERTY_X86_FEATURE_1_SHSTK, "SHSTK");

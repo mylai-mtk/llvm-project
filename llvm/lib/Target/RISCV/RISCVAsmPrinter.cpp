@@ -99,6 +99,8 @@ public:
   void emitFunctionEntryLabel() override;
   bool emitDirectiveOptionArch();
 
+  void EmitNoteGnuProperty(const Module &M);
+
 private:
   void emitAttributes();
 
@@ -396,6 +398,7 @@ void RISCVAsmPrinter::emitEndOfAsmFile(Module &M) {
   if (TM.getTargetTriple().isOSBinFormatELF())
     RTS.finishAttributeSection();
   EmitHwasanMemaccessSymbols(M);
+  EmitNoteGnuProperty(M);
 }
 
 void RISCVAsmPrinter::emitAttributes() {
@@ -734,6 +737,28 @@ void RISCVAsmPrinter::EmitHwasanMemaccessSymbols(Module &M) {
     OutStreamer->emitInstruction(MCInstBuilder(RISCV::PseudoCALL).addExpr(Expr),
                                  MCSTI);
   }
+}
+
+void RISCVAsmPrinter::EmitNoteGnuProperty(const Module &M) {
+  uint32_t Feature1And = 0;
+  if (M.getModuleFlag("zicfilp-cfi-simple"))
+    Feature1And |= ELF::GNU_PROPERTY_RISCV_FEATURE_1_CFI_LP_SIMPLE;
+  if (M.getModuleFlag("zicfilp-cfi-func-sig"))
+    Feature1And |= ELF::GNU_PROPERTY_RISCV_FEATURE_1_CFI_LP_FUNC_SIG;
+
+  // Use MCSubtargetInfo from TargetMachine. Individual functions may have
+  // attributes that differ from other functions in the module and we have no
+  // way to know which function is correct.
+  const MCSubtargetInfo &MCSTI = *TM.getMCSubtargetInfo();
+  if (MCSTI.hasFeature(RISCV::FeatureStdExtZicfiss))
+    Feature1And |= ELF::GNU_PROPERTY_RISCV_FEATURE_1_CFI_SS;
+
+  if (!Feature1And)
+    return;
+
+  RISCVTargetStreamer &RTS =
+      static_cast<RISCVTargetStreamer &>(*OutStreamer->getTargetStreamer());
+  RTS.emitNoteGnuPropertySection(Feature1And);
 }
 
 static MCOperand lowerSymbolOperand(const MachineOperand &MO, MCSymbol *Sym,

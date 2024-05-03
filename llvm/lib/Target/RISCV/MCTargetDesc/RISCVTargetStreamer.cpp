@@ -14,6 +14,7 @@
 #include "RISCVBaseInfo.h"
 #include "RISCVMCTargetDesc.h"
 #include "llvm/MC/MCSymbol.h"
+#include "llvm/BinaryFormat/ELF.h"
 #include "llvm/Support/FormattedStream.h"
 #include "llvm/Support/RISCVAttributes.h"
 #include "llvm/Support/RISCVISAInfo.h"
@@ -43,6 +44,9 @@ void RISCVTargetStreamer::emitTextAttribute(unsigned Attribute,
 void RISCVTargetStreamer::emitIntTextAttribute(unsigned Attribute,
                                                unsigned IntValue,
                                                StringRef StringValue) {}
+void RISCVTargetStreamer::emitNoteGnuPropertySection(
+    const uint32_t Feature1And) {}
+
 void RISCVTargetStreamer::setTargetABI(RISCVABI::ABI ABI) {
   assert(ABI != RISCVABI::ABI_Unknown && "Improperly initialized target ABI");
   TargetABI = ABI;
@@ -144,5 +148,19 @@ void RISCVTargetAsmStreamer::emitTextAttribute(unsigned Attribute,
 void RISCVTargetAsmStreamer::emitIntTextAttribute(unsigned Attribute,
                                                   unsigned IntValue,
                                                   StringRef StringValue) {}
+
+void RISCVTargetAsmStreamer::emitNoteGnuPropertySection(const uint32_t Feature1And) {
+  OS << "\t.pushsection .note.gnu.property, \"a\"\n";
+  OS << "\t.p2align 3\n";
+  OS << "\t.word 4\n";
+  OS << "\t.word 16\n";
+  OS << "\t.word " << ELF::NT_GNU_PROPERTY_TYPE_0 << "\n";
+  OS << "\t.asciz \"GNU\"\n";
+  OS << "\t.word " << ELF::GNU_PROPERTY_RISCV_FEATURE_1_AND << '\n';
+  OS << "\t.word 4\n";
+  OS << "\t.word " << Feature1And << '\n';
+  OS << "\t.word 0\n";
+  OS << "\t.popsection\n";
+}
 
 void RISCVTargetAsmStreamer::finishAttributeSection() {}

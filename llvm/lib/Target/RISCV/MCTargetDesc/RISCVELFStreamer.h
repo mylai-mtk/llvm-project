@@ -69,9 +69,9 @@ public:
   void emitDirectiveOptionRelax() override;
   void emitDirectiveOptionNoRelax() override;
   void emitDirectiveVariantCC(MCSymbol &Symbol) override;
+  void emitNoteGnuPropertySection(const uint32_t Feature1And) override;
 
   void finish() override;
-  void emitNoteSection(unsigned Flags);
 };
 
 MCELFStreamer *createRISCVELFStreamer(MCContext &C,

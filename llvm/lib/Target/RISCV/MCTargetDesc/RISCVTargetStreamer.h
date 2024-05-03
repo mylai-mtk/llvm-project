@@ -54,6 +54,7 @@ public:
   virtual void emitTextAttribute(unsigned Attribute, StringRef String);
   virtual void emitIntTextAttribute(unsigned Attribute, unsigned IntValue,
                                     StringRef StringValue);
+  virtual void emitNoteGnuPropertySection(const uint32_t Feature1And);
 
   void emitTargetAttributes(const MCSubtargetInfo &STI, bool EmitStackAlign);
   void setTargetABI(RISCVABI::ABI ABI);
@@ -83,6 +84,7 @@ public:
   void emitDirectiveOptionNoRelax() override;
   void emitDirectiveOptionArch(ArrayRef<RISCVOptionArchArg> Args) override;
   void emitDirectiveVariantCC(MCSymbol &Symbol) override;
+  void emitNoteGnuPropertySection(const uint32_t Feature1And) override;
 };
 
 }
