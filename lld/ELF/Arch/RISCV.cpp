@@ -8,6 +8,7 @@
 
 #include "InputFiles.h"
 #include "OutputSections.h"
+#include "SymbolTable.h"
 #include "Symbols.h"
 #include "SyntheticSections.h"
 #include "Target.h"
@@ -1094,6 +1095,98 @@ void RISCVCfiLpUnlabeledPLT::writePlt(uint8_t *buf, const Symbol &sym,
 }
 
 namespace {
+
+class RISCVCfiLpFuncSigPLT final : public RISCV {
+public:
+  RISCVCfiLpFuncSigPLT();
+  void writePltHeader(uint8_t *buf) const override;
+  void writePlt(uint8_t *buf, const Symbol &sym,
+                uint64_t pltEntryAddr) const override;
+
+private:
+  static uint32_t getLpadLabel(const Symbol &sym);
+};
+
+} // namespace
+
+RISCVCfiLpFuncSigPLT::RISCVCfiLpFuncSigPLT() {
+  pltHeaderSize = 48;
+  pltEntrySize = 32;
+  ipltEntrySize = 32;
+}
+
+void RISCVCfiLpFuncSigPLT::writePltHeader(uint8_t *buf) const {
+  // lpad 0
+  // 1: auipc t2, %pcrel_hi(.got.plt)
+  // sub t1, t1, t3
+  // l[wd] t3, %pcrel_lo(1b)(t2); t3 = _dl_runtime_resolve
+  // addi t1, t1, -pltHeaderSize-20; t1 = &.plt[i] - &.plt[0]
+  // addi t0, t2, %pcrel_lo(1b)
+  // srli t1, t1, (rv64?2:3); t1 = &.got.plt[i] - &.got.plt[0]
+  // l[wd] t0, Wordsize(t0); t0 = link_map
+  // jr t3
+  // nop
+  // nop
+  // nop
+  const uint32_t offset =
+      ctx.in.gotPlt->getVA() - (ctx.in.plt->getVA() + 4 /* offset for lpad */);
+  const uint32_t load = ctx.arg.is64 ? LD : LW;
+  write32le(buf + 0, utype(AUIPC, 0, 0)); // lpad 0
+  write32le(buf + 4, utype(AUIPC, X_T2, hi20(offset)));
+  write32le(buf + 8, rtype(SUB, X_T1, X_T1, X_T3));
+  write32le(buf + 12, itype(load, X_T3, X_T2, lo12(offset)));
+  write32le(buf + 16, itype(ADDI, X_T1, X_T1, -ctx.target->pltHeaderSize - 20));
+  write32le(buf + 20, itype(ADDI, X_T0, X_T2, lo12(offset)));
+  write32le(buf + 24, itype(SRLI, X_T1, X_T1, ctx.arg.is64 ? 2 : 3));
+  write32le(buf + 28, itype(load, X_T0, X_T0, ctx.arg.wordsize));
+  write32le(buf + 32, itype(JALR, 0, X_T3, 0));
+  write32le(buf + 36, itype(ADDI, 0, 0, 0)); // nop
+  write32le(buf + 40, itype(ADDI, 0, 0, 0)); // nop
+  write32le(buf + 44, itype(ADDI, 0, 0, 0)); // nop
+}
+
+void RISCVCfiLpFuncSigPLT::writePlt(uint8_t *buf, const Symbol &sym,
+                                    uint64_t pltEntryAddr) const {
+  // lpad <label>
+  // 1: auipc t3, %pcrel_hi(f@.got.plt)
+  // l[wd] t3, %pcrel_lo(1b)(t3)
+  // lui t2, <label>
+  // jalr t1, t3
+  // nop
+  // nop
+  // nop
+  const uint32_t label = getLpadLabel(sym);
+  const uint32_t offset =
+      sym.getGotPltVA() - (pltEntryAddr + 4 /* offset for lpad */);
+  write32le(buf + 0, utype(AUIPC, 0, label)); // lpad <label>
+  write32le(buf + 4, utype(AUIPC, X_T3, hi20(offset)));
+  write32le(buf + 8, itype(ctx.arg.is64 ? LD : LW, X_T3, X_T3, lo12(offset)));
+  write32le(buf + 12, utype(LUI, X_T2, label));
+  write32le(buf + 16, itype(JALR, X_T1, X_T3, 0));
+  write32le(buf + 20, itype(ADDI, 0, 0, 0)); // nop
+  write32le(buf + 24, itype(ADDI, 0, 0, 0)); // nop
+  write32le(buf + 28, itype(ADDI, 0, 0, 0)); // nop
+}
+
+uint32_t RISCVCfiLpFuncSigPLT::getLpadLabel(const Symbol &sym) {
+  const Symbol *const labelSym =
+      ctx.symtab->find("__riscv_lpad_label_" + std::string(sym.getName()));
+  if (labelSym == nullptr) {
+    error("failed to find RISCV lpad label for symbol: " + sym.getName());
+    return 0;
+  }
+
+  if (auto *const d = dyn_cast<const Defined>(labelSym))
+    return d->value;
+  else if (auto *const s = dyn_cast<const SharedSymbol>(labelSym))
+    return s->value;
+  else {
+    error("failed to find RISCV lpad label for symbol: " + sym.getName());
+    return 0;
+  }
+}
+
+namespace {
 // Representation of the merged .riscv.attributes input sections. The psABI
 // specifies merge policy for attributes. E.g. if we link an object without an
 // extension with an object with the extension, the output Tag_RISCV_arch shall
@@ -1390,6 +1483,11 @@ TargetInfo *elf::getRISCVTargetInfo() {
   if ((ctx.arg.andFeatures & GNU_PROPERTY_RISCV_FEATURE_1_CFI_LP_UNLABELED) ||
       ctx.arg.zForceZicfilp == ForceZicfilpPolicy::Unlabeled) {
     static RISCVCfiLpUnlabeledPLT target;
+    return &target;
+  }
+  if ((ctx.arg.andFeatures & GNU_PROPERTY_RISCV_FEATURE_1_CFI_LP_FUNC_SIG) ||
+      ctx.arg.zForceZicfilp == ForceZicfilpPolicy::FuncSig) {
+    static RISCVCfiLpFuncSigPLT target;
     return &target;
   }
 
