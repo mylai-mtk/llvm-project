@@ -608,6 +608,23 @@ static GcsPolicy getZGcs(opt::InputArgList &args) {
   return ret;
 }
 
+static ForceZicfilpPolicy getZForceZicfilp(opt::InputArgList &args) {
+  ForceZicfilpPolicy ret = ForceZicfilpPolicy::Default;
+  for (auto *arg : args.filtered(OPT_z)) {
+    std::pair<StringRef, StringRef> kv = StringRef(arg->getValue()).split('=');
+    if (kv.first == "force-zicfilp") {
+      arg->claim();
+      if (kv.second == "unlabeled")
+        ret = ForceZicfilpPolicy::Unlabeled;
+      else if (kv.second == "func_sig")
+        ret = ForceZicfilpPolicy::FuncSig;
+      else
+        error("unknown -z force-zicfilp= value: " + StringRef(kv.second));
+    }
+  }
+  return ret;
+}
+
 // Report a warning for an unknown -z option.
 static void checkZOptions(opt::InputArgList &args) {
   // This function is called before getTarget(), when certain options are not
@@ -1532,7 +1549,7 @@ static void readConfigs(Ctx &ctx, opt::InputArgList &args) {
   ctx.arg.zWxneeded = hasZOption(args, "wxneeded");
   setUnresolvedSymbolPolicy(ctx, args);
   ctx.arg.power10Stubs = args.getLastArgValue(OPT_power10_stubs_eq) != "no";
-  ctx.arg.zForceZicfilp = hasZOption(args, "force-zicfilp");
+  ctx.arg.zForceZicfilp = getZForceZicfilp(args);
   ctx.arg.zForceZicfiss = hasZOption(args, "force-zicfiss");
 
   if (opt::Arg *arg = args.getLastArg(OPT_eb, OPT_el)) {
@@ -2779,14 +2796,17 @@ static void readSecurityNotes(Ctx &ctx) {
                       "GNU_PROPERTY_X86_FEATURE_1_SHSTK property");
 
     checkAndReportMissingFeature(
-        ctx.arg.zZicfilpReport, features, GNU_PROPERTY_RISCV_FEATURE_1_ZICFILP,
+        ctx.arg.zZicfilpReport, features,
+            GNU_PROPERTY_RISCV_FEATURE_1_CFI_LP_UNLABELED |
+            GNU_PROPERTY_RISCV_FEATURE_1_CFI_LP_FUNC_SIG,
         toString(f) + ": -z zicfilp-report: file does not have "
-                      "GNU_PROPERTY_RISCV_FEATURE_1_ZICFILP property");
+                      "GNU_PROPERTY_RISCV_FEATURE_1_CFI_LP_UNLABELED/"
+                      "GNU_PROPERTY_RISCV_FEATURE_1_CFI_LP_FUNC_SIG property");
 
     checkAndReportMissingFeature(
-        ctx.arg.zZicfissReport, features, GNU_PROPERTY_RISCV_FEATURE_1_ZICFISS,
+        ctx.arg.zZicfissReport, features, GNU_PROPERTY_RISCV_FEATURE_1_CFI_SS,
         toString(f) + ": -z zicfiss-report: file does not have "
-                      "GNU_PROPERTY_RISCV_FEATURE_1_ZICFISS property");
+                      "GNU_PROPERTY_RISCV_FEATURE_1_CFI_SS property");
 
     if (ctx.arg.zForceBti && !(features & GNU_PROPERTY_AARCH64_FEATURE_1_BTI)) {
       features |= GNU_PROPERTY_AARCH64_FEATURE_1_BTI;
@@ -2806,19 +2826,30 @@ static void readSecurityNotes(Ctx &ctx) {
       features |= GNU_PROPERTY_AARCH64_FEATURE_1_PAC;
     }
 
-    if (ctx.arg.zForceZicfilp &&
-        !(features & GNU_PROPERTY_RISCV_FEATURE_1_ZICFILP)) {
-      features |= GNU_PROPERTY_RISCV_FEATURE_1_ZICFILP;
+    if (ctx.arg.zForceZicfilp == ForceZicfilpPolicy::Unlabeled &&
+        !(features & GNU_PROPERTY_RISCV_FEATURE_1_CFI_LP_UNLABELED)) {
+      features |= GNU_PROPERTY_RISCV_FEATURE_1_CFI_LP_UNLABELED;
       if (ctx.arg.zZicfilpReport == "none")
-        warn(toString(f) + ": -z force-zicfilp: file does not have "
-                           "GNU_PROPERTY_RISCV_FEATURE_1_ZICFILP property");
+        warn(toString(f) +
+            ": -z force-zicfilp=unlabeled: file does not have "
+            "GNU_PROPERTY_RISCV_FEATURE_1_CFI_LP_UNLABELED property");
     }
+
+    if (ctx.arg.zForceZicfilp == ForceZicfilpPolicy::FuncSig &&
+        !(features & GNU_PROPERTY_RISCV_FEATURE_1_CFI_LP_FUNC_SIG)) {
+      features |= GNU_PROPERTY_RISCV_FEATURE_1_CFI_LP_FUNC_SIG;
+      if (ctx.arg.zZicfilpReport == "none")
+        warn(toString(f) +
+            ": -z force-zicfilp=func_sig: file does not have "
+            "GNU_PROPERTY_RISCV_FEATURE_1_CFI_LP_FUNC_SIG property");
+    }
+
     if (ctx.arg.zForceZicfiss &&
-        !(features & GNU_PROPERTY_RISCV_FEATURE_1_ZICFISS)) {
-      features |= GNU_PROPERTY_RISCV_FEATURE_1_ZICFISS;
+        !(features & GNU_PROPERTY_RISCV_FEATURE_1_CFI_SS)) {
+      features |= GNU_PROPERTY_RISCV_FEATURE_1_CFI_SS;
       if (ctx.arg.zZicfissReport == "none")
         warn(toString(f) + ": -z force-zicfiss: file does not have "
-                           "GNU_PROPERTY_RISCV_FEATURE_1_ZICFISS property");
+                           "GNU_PROPERTY_RISCV_FEATURE_1_CFI_SS property");
     }
 
     ctx.arg.andFeatures &= features;
