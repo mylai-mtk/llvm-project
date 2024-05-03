@@ -90,21 +90,24 @@ public:
   // function on files of other types.
   ArrayRef<Symbol *> getSymbols() const {
     assert(fileKind == BinaryKind || fileKind == ObjKind ||
-           fileKind == BitcodeKind);
+           fileKind == BitcodeKind || fileKind == SharedKind);
     return {symbols.get(), numSymbols};
   }
 
   MutableArrayRef<Symbol *> getMutableSymbols() {
     assert(fileKind == BinaryKind || fileKind == ObjKind ||
-           fileKind == BitcodeKind);
+           fileKind == BitcodeKind || fileKind == SharedKind);
     return {symbols.get(), numSymbols};
   }
 
   Symbol &getSymbol(uint32_t symbolIndex) const {
-    assert(fileKind == ObjKind);
+    assert(fileKind == ObjKind || fileKind == SharedKind);
     if (symbolIndex >= numSymbols)
       Fatal(ctx) << this << ": invalid symbol index";
-    return *this->symbols[symbolIndex];
+    Symbol *const sym = this->symbols[symbolIndex];
+    if (!sym)
+      Fatal(ctx) << this << ": null symbol";
+    return *sym;
   }
 
   template <typename RelT> Symbol &getRelocTargetSym(const RelT &rel) const {

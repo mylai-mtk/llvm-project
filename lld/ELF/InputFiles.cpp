@@ -1522,6 +1522,8 @@ template <class ELFT> void SharedFile::parse() {
   SmallString<0> versionedNameBuffer;
 
   // Add symbols to the symbol table.
+  numSymbols = numELFSyms;
+  symbols = std::make_unique<Symbol *[]>(numSymbols);
   ArrayRef<Elf_Sym> syms = this->getGlobalELFSyms<ELFT>();
   for (size_t i = 0, e = syms.size(); i != e; ++i) {
     const Elf_Sym &sym = syms[i];
@@ -1558,6 +1560,7 @@ template <class ELFT> void SharedFile::parse() {
       if (sym.getBinding() != STB_WEAK &&
           ctx.arg.unresolvedSymbolsInShlib != UnresolvedPolicy::Ignore)
         requiredSymbols.push_back(s);
+      symbols[firstGlobal + i] = s;
       continue;
     }
 
@@ -1582,6 +1585,7 @@ template <class ELFT> void SharedFile::parse() {
       s->dsoDefined = true;
       if (s->file == this)
         s->versionId = ver;
+      symbols[firstGlobal + i] = s;
     }
 
     // Also add the symbol with the versioned name to handle undefined symbols
@@ -1600,6 +1604,7 @@ template <class ELFT> void SharedFile::parse() {
     s->dsoDefined = true;
     if (s->file == this)
       s->versionId = idx;
+    symbols[firstGlobal + i] = s;
   }
 }
 

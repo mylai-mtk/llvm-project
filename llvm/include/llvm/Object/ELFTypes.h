@@ -820,6 +820,13 @@ template <class ELFT> struct Elf_Mips_ABIFlags {
   Elf_Word flags2;   // General flags
 };
 
+// .riscv.lpadinfo section content
+template <class ELFT> struct Elf_Riscv_LpadInfo {
+  LLVM_ELF_IMPORT_TYPES_ELFT(ELFT)
+  Elf_Word lpi_sym;   // Symbol (symbol table index)
+  Elf_Word lpi_value; // Landing pad value for the symbol
+};
+
 // Struct representing the BBAddrMap for one function.
 struct BBAddrMap {
 

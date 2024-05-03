@@ -3257,9 +3257,13 @@ template <class ELFT> void LinkerDriver::link(opt::InputArgList &args) {
   if (!ctx.arg.relocatable)
     combineEhSections(ctx);
 
-  // Merge .riscv.attributes sections.
-  if (ctx.arg.emachine == EM_RISCV)
+  if (ctx.arg.emachine == EM_RISCV) {
+    // Merge .riscv.attributes sections.
     mergeRISCVAttributesSections(ctx);
+
+    // Process .riscv.lpadinfo for PLT synthesis
+    readRISCVLpadinfo(ctx);
+  }
 
   {
     llvm::TimeTraceScope timeScope("Assign sections");

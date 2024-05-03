@@ -46,6 +46,11 @@ public:
   void relocateAlloc(InputSectionBase &sec, uint8_t *buf) const override;
   bool relaxOnce(int pass) const override;
   void finalizeRelax(int passes) const override;
+
+  virtual void readLpadinfoSec() {};
+  virtual uint32_t
+  getLpadVal(const Symbol &sym,
+             const DiagLevel diagLvOnNotFound = DiagLevel::Err) const;
 };
 
 } // end anonymous namespace
@@ -1034,6 +1039,13 @@ void RISCV::finalizeRelax(int passes) const {
   }
 }
 
+uint32_t
+RISCV::getLpadVal(const Symbol &sym, const DiagLevel diagLvOnNotFound) const {
+  ELFSyncStream{ctx, diagLvOnNotFound}
+      << "failed to get RISCV lpad value for symbol: " << sym.getName();
+  return 0;
+}
+
 namespace {
 
 class RISCVCfiLpUnlabeledPLT final : public RISCV {
@@ -1092,6 +1104,191 @@ void RISCVCfiLpUnlabeledPLT::writePlt(uint8_t *buf, const Symbol &sym,
   write32le(buf + 4, utype(AUIPC, X_T3, hi20(offset)));
   write32le(buf + 8, itype(ctx.arg.is64 ? LD : LW, X_T3, X_T3, lo12(offset)));
   write32le(buf + 12, itype(JALR, X_T1, X_T3, 0));
+}
+
+namespace {
+
+class RISCVCfiLpLabeledPLT final : public RISCV {
+public:
+  RISCVCfiLpLabeledPLT(Ctx &ctx);
+  void writePltHeader(uint8_t *buf) const override;
+  void writePlt(uint8_t *buf, const Symbol &sym,
+                uint64_t pltEntryAddr) const override;
+  void readLpadinfoSec() override;
+  uint32_t
+  getLpadVal(const Symbol &sym,
+             const DiagLevel diagLvOnNotFound = DiagLevel::Err) const override;
+
+private:
+  template <class ELFT> void readLpadinfoSecImpl();
+  void addLpadVal(const Symbol &sym, const uint32_t lpadVal,
+                  const InputFile &file, const bool symIsDefinition);
+
+  llvm::DenseMap<const Symbol *, uint32_t> defLpadVals;
+  llvm::DenseMap<const Symbol *, uint32_t> refLpadVals;
+};
+
+} // namespace
+
+RISCVCfiLpLabeledPLT::RISCVCfiLpLabeledPLT(Ctx &ctx) : RISCV(ctx) {
+  pltHeaderSize = 48;
+  pltEntrySize = 32;
+  ipltEntrySize = 32;
+}
+
+void RISCVCfiLpLabeledPLT::writePltHeader(uint8_t *buf) const {
+  // lpad 0
+  // 1: auipc t2, %pcrel_hi(.got.plt)
+  // sub t1, t1, t3
+  // l[wd] t3, %pcrel_lo(1b)(t2); t3 = _dl_runtime_resolve
+  // addi t1, t1, -pltHeaderSize-20; t1 = &.plt[i] - &.plt[0]
+  // addi t0, t2, %pcrel_lo(1b)
+  // srli t1, t1, (rv64?2:3); t1 = &.got.plt[i] - &.got.plt[0]
+  // l[wd] t0, Wordsize(t0); t0 = link_map
+  // jr t3
+  // nop
+  // nop
+  // nop
+  const uint32_t offset =
+      ctx.in.gotPlt->getVA() - (ctx.in.plt->getVA() + 4 /* offset for lpad */);
+  const uint32_t load = ctx.arg.is64 ? LD : LW;
+  write32le(buf + 0, utype(AUIPC, 0, 0)); // lpad 0
+  write32le(buf + 4, utype(AUIPC, X_T2, hi20(offset)));
+  write32le(buf + 8, rtype(SUB, X_T1, X_T1, X_T3));
+  write32le(buf + 12, itype(load, X_T3, X_T2, lo12(offset)));
+  write32le(buf + 16, itype(ADDI, X_T1, X_T1, -ctx.target->pltHeaderSize - 20));
+  write32le(buf + 20, itype(ADDI, X_T0, X_T2, lo12(offset)));
+  write32le(buf + 24, itype(SRLI, X_T1, X_T1, ctx.arg.is64 ? 2 : 3));
+  write32le(buf + 28, itype(load, X_T0, X_T0, ctx.arg.wordsize));
+  write32le(buf + 32, itype(JALR, 0, X_T3, 0));
+  write32le(buf + 36, itype(ADDI, 0, 0, 0)); // nop
+  write32le(buf + 40, itype(ADDI, 0, 0, 0)); // nop
+  write32le(buf + 44, itype(ADDI, 0, 0, 0)); // nop
+}
+
+void RISCVCfiLpLabeledPLT::writePlt(uint8_t *buf, const Symbol &sym,
+                                    uint64_t pltEntryAddr) const {
+  // lpad <label>
+  // 1: auipc t3, %pcrel_hi(f@.got.plt)
+  // l[wd] t3, %pcrel_lo(1b)(t3)
+  // lui t2, <label>
+  // jalr t1, t3
+  // nop
+  // nop
+  // nop
+  const uint32_t lpadVal = getLpadVal(sym);
+  const uint32_t offset =
+      sym.getGotPltVA(ctx) - (pltEntryAddr + 4 /* offset for lpad */);
+  write32le(buf + 0, utype(AUIPC, 0, lpadVal)); // lpad <label>
+  write32le(buf + 4, utype(AUIPC, X_T3, hi20(offset)));
+  write32le(buf + 8, itype(ctx.arg.is64 ? LD : LW, X_T3, X_T3, lo12(offset)));
+  write32le(buf + 12, utype(LUI, X_T2, lpadVal));
+  write32le(buf + 16, itype(JALR, X_T1, X_T3, 0));
+  write32le(buf + 20, itype(ADDI, 0, 0, 0)); // nop
+  write32le(buf + 24, itype(ADDI, 0, 0, 0)); // nop
+  write32le(buf + 28, itype(ADDI, 0, 0, 0)); // nop
+}
+
+void RISCVCfiLpLabeledPLT::readLpadinfoSec() {
+  invokeELFT(readLpadinfoSecImpl);
+
+  llvm::erase_if(ctx.inputSections, [](InputSectionBase *const isec) {
+    return !isa<SyntheticSection>(isec) && isec->type == SHT_RISCV_LPADINFO;
+  });
+}
+
+template <class ELFT>
+void RISCVCfiLpLabeledPLT::readLpadinfoSecImpl() {
+  for (const InputSectionBase *const isec : ctx.inputSections) {
+    if (isec->file->isInternal() || isec->type != SHT_RISCV_LPADINFO)
+      continue;
+
+    const ObjFile<ELFT> *const file = isec->getFile<ELFT>();
+    const typename ELFT::SymRange eSyms = file->template getELFSyms<ELFT>();
+    for (const auto &lpi : isec->getDataAs<Elf_Riscv_LpadInfo<ELFT>>()) {
+      const Symbol &sym = file->getSymbol(lpi.lpi_sym);
+      if (sym.isLocal()) {
+        Err(ctx) << file << ": found invalid RISCV lpad info for local symbol: "
+                 << sym.getName();
+        continue;
+      }
+
+      const typename ELFT::Sym &eSym = eSyms[lpi.lpi_sym];
+      addLpadVal(sym, lpi.lpi_value, *file, eSym.isDefined());
+    }
+  }
+
+  // ctx.inputSections does not include sections in shared files, so parse the
+  // .riscv.lpadinfo of them here
+  for (const SharedFile *const file : ctx.sharedFiles) {
+    for (const typename ELFT::Shdr &shdr : file->getELFShdrs<ELFT>()) {
+      if (shdr.sh_type != SHT_RISCV_LPADINFO)
+        continue;
+
+      auto eLpadInfos = file->getObj<ELFT>()
+          .template getSectionContentsAsArray<Elf_Riscv_LpadInfo<ELFT>>(shdr);
+      if (Error err = eLpadInfos.takeError()) {
+        Fatal(ctx) << file << ": failed to read .riscv.lpadinfo section: "
+                   << toString(std::move(err));
+        continue;
+      }
+
+      const typename ELFT::SymRange eSyms = file->getELFSyms<ELFT>();
+      for (const Elf_Riscv_LpadInfo<ELFT> &lpi : *eLpadInfos) {
+        const Symbol &sym = file->getSymbol(lpi.lpi_sym);
+        const typename ELFT::Sym &eSym = eSyms[lpi.lpi_sym];
+        addLpadVal(sym, lpi.lpi_value, *file, eSym.isDefined());
+      }
+    }
+  }
+}
+
+void RISCVCfiLpLabeledPLT::addLpadVal(const Symbol &sym, const uint32_t lpadVal,
+    const InputFile &file, const bool symIsDefinition) {
+  Log(ctx) << &file << ": found for symbol: " << sym.getName()
+           << ": " << (symIsDefinition ? "definition" : "reference")
+           << " RISCV lpad value: " << lpadVal;
+  assert((symIsDefinition || lpadVal) &&
+         "reference lpad value should not be 0 (i.e. unknown)");
+
+  llvm::DenseMap<const Symbol *, uint32_t> *map =
+      symIsDefinition ? &defLpadVals : &refLpadVals;
+  if (const auto [it, isNew] = map->try_emplace(&sym, lpadVal);
+      !isNew && it->second != lpadVal) {
+    if (!symIsDefinition || (it->second != 0 && lpadVal != 0))
+      Err(ctx) << &file << ": found conflicting RISCV lpad values for symbol: "
+               << sym.getName();
+    else {
+      // If one of `it->second` and `lpadVal` is 0, set `it->second` to the
+      // non-zero one. If both are 0, set `it->second` to 0
+      it->second |= lpadVal;
+    }
+  }
+}
+
+uint32_t
+RISCVCfiLpLabeledPLT::getLpadVal(const Symbol &sym,
+                                 const DiagLevel diagLvOnNotFound) const {
+  bool hasZeroDefLpadVal = false;
+  if (const auto it = defLpadVals.find(&sym); it != defLpadVals.end()) {
+    if (it->second)
+      return it->second;
+    else {
+      hasZeroDefLpadVal = true;
+      // If definition lpad value is 0, check if other lpad values are available
+    }
+  }
+
+  if (const auto it = refLpadVals.find(&sym); it != refLpadVals.end())
+    return it->second;
+
+  if (hasZeroDefLpadVal) {
+    // There's no lpad values from references, but we have a definition lpad
+    // value saying 0 is ok
+    return 0;
+  }
+
+  return RISCV::getLpadVal(sym, diagLvOnNotFound);
 }
 
 namespace {
@@ -1390,8 +1587,14 @@ void elf::setRISCVTargetInfo(Ctx &ctx) {
   RISCV *target;
   if (ctx.arg.andFeatures & GNU_PROPERTY_RISCV_FEATURE_1_CFI_LP_UNLABELED)
     target = new RISCVCfiLpUnlabeledPLT(ctx);
+  if (ctx.arg.andFeatures & GNU_PROPERTY_RISCV_FEATURE_1_CFI_LP_FUNC_SIG)
+    target = new RISCVCfiLpLabeledPLT(ctx);
   else
     target = new RISCV(ctx);
 
   ctx.target.reset(target);
+}
+
+void elf::readRISCVLpadinfo(Ctx &ctx) {
+  static_cast<RISCV *>(ctx.target.get())->readLpadinfoSec();
 }
