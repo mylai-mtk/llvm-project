@@ -1844,8 +1844,9 @@ enum : unsigned {
 
 // riscv processor feature bits.
 enum : unsigned {
-  GNU_PROPERTY_RISCV_FEATURE_1_ZICFILP = 1 << 0,
-  GNU_PROPERTY_RISCV_FEATURE_1_ZICFISS = 1 << 1,
+  GNU_PROPERTY_RISCV_FEATURE_1_CFI_LP_UNLABELED = 1 << 0,
+  GNU_PROPERTY_RISCV_FEATURE_1_CFI_SS = 1 << 1,
+  GNU_PROPERTY_RISCV_FEATURE_1_CFI_LP_FUNC_SIG = 1 << 2,
 };
 
 // FreeBSD note types.
