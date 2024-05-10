@@ -6,7 +6,11 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lpad.h"
+
 #if __riscv_xlen == 32
 #define __mulxi3 __mulsi3
 #include "int_mul_impl.inc"
 #endif
+
+RISCV_ZICFILP_NOTE_GNU_PROPERTY_SECTION
