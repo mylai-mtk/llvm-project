@@ -222,6 +222,21 @@ void RISCVTargetInfo::getTargetDefines(const LangOptions &Opts,
     else
       Builder.defineMacro("__riscv_32e");
   }
+
+  if (ISAInfo->hasExtension("zicfilp")) {
+    switch (Opts.getZicfilpLabelScheme()) {
+    case LangOptions::RISCVZicfilpLabelSchemeKind::None:
+      break;
+    case LangOptions::RISCVZicfilpLabelSchemeKind::Simple:
+      Builder.defineMacro("__riscv_landing_pad", "1");
+      Builder.defineMacro("__riscv_landing_pad_simple", "1");
+      break;
+    case LangOptions::RISCVZicfilpLabelSchemeKind::FuncSig:
+      Builder.defineMacro("__riscv_landing_pad", "1");
+      Builder.defineMacro("__riscv_landing_pad_func_sig", "1");
+      break;
+    }
+  }
 }
 
 static constexpr Builtin::Info BuiltinInfo[] = {

@@ -1636,3 +1636,23 @@
 // RUN: %clang --target=riscv64-unknown-linux-gnu -mcpu=sifive-p450 -E -dM %s \
 // RUN:  -o - | FileCheck %s --check-prefix=CHECK-MISALIGNED-FAST
 // CHECK-MISALIGNED-FAST: __riscv_misaligned_fast 1
+
+// Landing Pad
+
+// RUN: %clang --target=riscv32 -menable-experimental-extensions \
+// RUN:   -march=rv32i_zicfilp0p4 -mzicfilp-label-scheme=simple \
+// RUN:   -E -dM %s -o - | FileCheck --check-prefix=CHECK-ZICFILP-SIMPLE %s
+// RUN: %clang --target=riscv64 -menable-experimental-extensions \
+// RUN:   -march=rv64i_zicfilp0p4 -mzicfilp-label-scheme=simple \
+// RUN:   -E -dM %s -o - | FileCheck --check-prefix=CHECK-ZICFILP-SIMPLE %s
+// CHECK-ZICFILP-SIMPLE-DAG: __riscv_landing_pad 1{{$}}
+// CHECK-ZICFILP-SIMPLE-DAG: __riscv_landing_pad_simple 1{{$}}
+
+// RUN: %clang --target=riscv32 -menable-experimental-extensions \
+// RUN:   -march=rv32i_zicfilp0p4 -mzicfilp-label-scheme=func_sig \
+// RUN:   -E -dM %s -o - | FileCheck --check-prefix=CHECK-ZICFILP-FUNC-SIG %s
+// RUN: %clang --target=riscv64 -menable-experimental-extensions \
+// RUN:   -march=rv64i_zicfilp0p4 -mzicfilp-label-scheme=func_sig \
+// RUN:   -E -dM %s -o - | FileCheck --check-prefix=CHECK-ZICFILP-FUNC-SIG %s
+// CHECK-ZICFILP-FUNC-SIG-DAG: __riscv_landing_pad 1{{$}}
+// CHECK-ZICFILP-FUNC-SIG-DAG: __riscv_landing_pad_func_sig 1{{$}}
