@@ -5,6 +5,8 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
+#include "control_flow_integrity.h"
+
 #if __riscv_xlen == 64
 #define __mulxi3 __muldi3
 #include "int_mul_impl.inc"

@@ -6,6 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "control_flow_integrity.h"
+
 #if __riscv_xlen == 32
 #define __mulxi3 __mulsi3
 #include "int_mul_impl.inc"
