@@ -5,7 +5,11 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
+#include "lpad.h"
+
 #if __riscv_xlen == 64
 #define __mulxi3 __muldi3
 #include "int_mul_impl.inc"
 #endif
+
+RISCV_ZICFILP_NOTE_GNU_PROPERTY_SECTION
