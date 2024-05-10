@@ -14,6 +14,8 @@
 // is the minimum grouping which will maintain the required 16-byte stack
 // alignment.
 
+#include "lpad.h"
+
   .text
 
 #if __riscv_xlen == 32
@@ -21,6 +23,7 @@
   .globl  __riscv_save_12
   .type   __riscv_save_12,@function
 __riscv_save_12:
+  LPAD(0) # TODO(mylai-mtk): Use correct label
   addi   sp, sp, -64
   mv     t1, zero
   sw     s11, 12(sp)
@@ -38,6 +41,7 @@ __riscv_save_11:
 __riscv_save_10:
 __riscv_save_9:
 __riscv_save_8:
+  LPAD(0) # TODO(mylai-mtk): Use correct label
   addi   sp, sp, -64
   li     t1, 16
 .Lriscv_save_11_8:
@@ -59,6 +63,7 @@ __riscv_save_7:
 __riscv_save_6:
 __riscv_save_5:
 __riscv_save_4:
+  LPAD(0) # TODO(mylai-mtk): Use correct label
   addi   sp, sp, -64
   li     t1, 32
 .Lriscv_save_7_4:
@@ -85,6 +90,7 @@ __riscv_save_3:
 __riscv_save_2:
 __riscv_save_1:
 __riscv_save_0:
+  LPAD(0) # TODO(mylai-mtk): Use correct label
   addi    sp, sp, -16
   sw      s2,  0(sp)
   sw      s1,  4(sp)
@@ -97,6 +103,7 @@ __riscv_save_0:
   .globl  __riscv_save_12
   .type   __riscv_save_12,@function
 __riscv_save_12:
+  LPAD(0) # TODO(mylai-mtk): Use correct label
   addi   sp, sp, -112
   mv     t1, zero
   sd     s11, 8(sp)
@@ -108,6 +115,7 @@ __riscv_save_12:
   .type   __riscv_save_10,@function
 __riscv_save_11:
 __riscv_save_10:
+  LPAD(0) # TODO(mylai-mtk): Use correct label
   addi   sp, sp, -112
   li     t1, 16
 .Lriscv_save_11_10:
@@ -121,6 +129,7 @@ __riscv_save_10:
   .type   __riscv_save_8,@function
 __riscv_save_9:
 __riscv_save_8:
+  LPAD(0) # TODO(mylai-mtk): Use correct label
   addi   sp, sp, -112
   li     t1, 32
 .Lriscv_save_9_8:
@@ -134,6 +143,7 @@ __riscv_save_8:
   .type   __riscv_save_6,@function
 __riscv_save_7:
 __riscv_save_6:
+  LPAD(0) # TODO(mylai-mtk): Use correct label
   addi   sp, sp, -112
   li     t1, 48
 .Lriscv_save_7_6:
@@ -147,6 +157,7 @@ __riscv_save_6:
   .type   __riscv_save_4,@function
 __riscv_save_5:
 __riscv_save_4:
+  LPAD(0) # TODO(mylai-mtk): Use correct label
   addi   sp, sp, -112
   li     t1, 64
 .Lriscv_save_5_4:
@@ -160,6 +171,7 @@ __riscv_save_4:
   .type   __riscv_save_2,@function
 __riscv_save_3:
 __riscv_save_2:
+  LPAD(0) # TODO(mylai-mtk): Use correct label
   addi   sp, sp, -112
   li     t1, 80
 .Lriscv_save_3_2:
@@ -176,6 +188,7 @@ __riscv_save_2:
   .type   __riscv_save_0,@function
 __riscv_save_1:
 __riscv_save_0:
+  LPAD(0) # TODO(mylai-mtk): Use correct label
   addi   sp, sp, -16
   sd     s0, 0(sp)
   sd     ra, 8(sp)
@@ -184,3 +197,5 @@ __riscv_save_0:
 #else
 # error "xlen must be 32 or 64 for save-restore implementation
 #endif
+
+RISCV_ZICFILP_NOTE_GNU_PROPERTY_SECTION

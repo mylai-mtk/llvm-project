@@ -10,6 +10,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lpad.h"
+
 #ifndef __mulxi3
 #error "__mulxi3 must be defined to use this generic implementation"
 #endif
@@ -20,6 +22,7 @@
 	.globl __mulxi3
 	.type  __mulxi3, @function
 __mulxi3:
+	LPAD(0) # TODO(mylai-mtk): Use correct label
 	mv     a2, a0
 	mv     a0, zero
 .L1:
