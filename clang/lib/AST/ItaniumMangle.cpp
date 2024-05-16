@@ -43,6 +43,14 @@ using namespace clang;
 
 namespace {
 
+static bool mayBeCovariant(const Type &Ty) {
+  if (auto * const PT = Ty.getAs<PointerType>())
+    return PT->getPointeeType()->isRecordType();
+  if (auto * const RT = Ty.getAs<ReferenceType>())
+    return RT->getPointeeType()->isRecordType();
+  return false;
+}
+
 static bool isLocalContainerContext(const DeclContext *DC) {
   return isa<FunctionDecl>(DC) || isa<ObjCMethodDecl>(DC) || isa<BlockDecl>(DC);
 }
@@ -136,6 +144,11 @@ public:
   void mangleLambdaSig(const CXXRecordDecl *Lambda, raw_ostream &) override;
 
   void mangleModuleInitializer(const Module *Module, raw_ostream &) override;
+
+  void mangleForRISCVZicfilpFuncSigLabel(const FunctionType &,
+                                         const bool IsCXXInstanceMethod,
+                                         const bool IsCXXVirtualMethod,
+                                         raw_ostream &) override;
 
   bool getNextDiscriminator(const NamedDecl *ND, unsigned &disc) {
     // Lambda closure types are already numbered.
@@ -7015,6 +7028,59 @@ bool CXXNameMangler::shouldHaveAbiTags(ItaniumMangleContextImpl &C,
   return TrackAbiTags.AbiTagsRoot.getUsedAbiTags().size();
 }
 
+namespace {
+
+class RISCVZicfilpFuncSigLabelMangler : public CXXNameMangler {
+public:
+  using CXXNameMangler::CXXNameMangler;
+
+  void mangleTypeImpl(const BuiltinType *T) override {
+    if (T->getKind() == BuiltinType::WChar_S ||
+        T->getKind() == BuiltinType::WChar_U) {
+      const Type * const OverrideT = getASTContext().getWCharTypeInC().
+                                     getTypePtr();
+      assert(isa<BuiltinType>(OverrideT) &&
+             "`wchar_t' in C is expected to be defined to a built-in type");
+      T = static_cast<const BuiltinType*>(OverrideT);
+    }
+    return CXXNameMangler::mangleTypeImpl(T);
+  }
+
+  // This <function-type> is the RISC-V psABI modified version
+  // <function-type> ::= [<CV-qualifiers>] [Dx] F <bare-function-type>
+  //                     [<ref-qualifier>] E
+  void mangleTypeImpl(const FunctionProtoType *T) override {
+    // Mangle CV-qualifiers, if present.  These are 'this' qualifiers,
+    // e.g. "const" in "int (A::*)() const".
+    mangleQualifiers(T->getMethodQuals());
+
+    getStream() << 'F';
+
+    mangleBareFunctionType(T, /*MangleReturnType=*/true);
+
+    // Mangle the ref-qualifier, if present.
+    mangleRefQualifier(T->getRefQualifier());
+
+    getStream() << 'E';
+  }
+
+  void mangleTypeImpl(const FunctionNoProtoType *T) override {
+    return CXXNameMangler::mangleTypeImpl(toFunctionProtoType(T));
+  }
+
+private:
+  const FunctionProtoType *toFunctionProtoType(
+      const FunctionNoProtoType * const T) {
+    FunctionProtoType::ExtProtoInfo EPI;
+    EPI.ExtInfo = T->getExtInfo();
+    const Type * const NewT = getASTContext().
+        getFunctionType(T->getReturnType(), {}, EPI).getTypePtr();
+    return static_cast<const FunctionProtoType *>(NewT);
+  }
+}; // class RISCVZicfilpFuncSigLabelMangler
+
+} // anonymous namespace
+
 //
 
 /// Mangles the name of the declaration D and emits that name to the given
@@ -7274,6 +7340,32 @@ void ItaniumMangleContextImpl::mangleModuleInitializer(const Module *M,
         StringRef(&M->Name[Partition + 1], M->Name.size() - Partition - 1),
         /*IsPartition*/ true);
   }
+}
+
+void ItaniumMangleContextImpl::mangleForRISCVZicfilpFuncSigLabel(
+    const FunctionType &FT,
+    const bool IsCXXInstanceMethod,
+    const bool IsCXXVirtualMethod,
+    raw_ostream &Out) {
+  if (IsCXXInstanceMethod)
+    // member methods uses a dummy class named `v` in place of real classes
+    Out << "M1v";
+
+  const FunctionType *PatchedFT = &FT;
+  if (IsCXXVirtualMethod) {
+    const auto * const FPT = dyn_cast<FunctionProtoType>(PatchedFT);
+    assert(FPT && "Expect virtual method to have a prototype!");
+    if (mayBeCovariant(*FPT->getReturnType().getTypePtr())) {
+      // possible covariant types use `void *` as return type for mangling
+      const Type * const NewT = getASTContext().getFunctionType(
+          getASTContext().getVoidPtrType(), FPT->param_types(),
+          FPT->getExtProtoInfo()).getTypePtr();
+      PatchedFT = static_cast<const FunctionType *>(NewT);
+    }
+  }
+
+  RISCVZicfilpFuncSigLabelMangler Mangler(*this, Out);
+  Mangler.mangleType(QualType(PatchedFT, 0));
 }
 
 ItaniumMangleContext *ItaniumMangleContext::create(ASTContext &Context,
