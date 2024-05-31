@@ -396,8 +396,10 @@ class CXXNameMangler {
   llvm::DenseMap<uintptr_t, unsigned> Substitutions;
   llvm::DenseMap<StringRef, unsigned> ModuleSubstitutions;
 
+protected:
   ASTContext &getASTContext() const { return Context.getASTContext(); }
 
+private:
   bool isCompatibleWith(LangOptions::ClangABI Ver) {
     return Context.getASTContext().getLangOpts().getClangABICompat() <= Ver;
   }
@@ -443,6 +445,8 @@ public:
       : CXXNameMangler(Outer, (raw_ostream &)Out_) {
     NullOut = true;
   }
+
+  virtual ~CXXNameMangler() = default;
 
   struct WithTemplateDepthOffset { unsigned Offset; };
   CXXNameMangler(ItaniumMangleContextImpl &C, raw_ostream &Out,
@@ -560,9 +564,11 @@ private:
   void mangleOperatorName(DeclarationName Name, unsigned Arity);
   void mangleOperatorName(OverloadedOperatorKind OO, unsigned Arity);
   void mangleVendorQualifier(StringRef qualifier);
+protected:
   void mangleQualifiers(Qualifiers Quals, const DependentAddressSpaceType *DAST = nullptr);
   void mangleRefQualifier(RefQualifierKind RefQualifier);
 
+private:
   void mangleObjCMethodName(const ObjCMethodDecl *MD);
 
   // Declare manglers for every type class.
@@ -573,11 +579,24 @@ private:
 
   void mangleType(const TagType*);
   void mangleType(TemplateName);
+
+protected:
+  // Use the `Impl` scheme instead of directly virtualizing `mangleType`s since
+  // `mangleType`s are declared by tables
+  virtual void mangleTypeImpl(const BuiltinType *T);
+  virtual void mangleTypeImpl(const FunctionProtoType *T);
+  virtual void mangleTypeImpl(const FunctionNoProtoType *T);
+
+private:
   static StringRef getCallingConvQualifierName(CallingConv CC);
   void mangleExtParameterInfo(FunctionProtoType::ExtParameterInfo info);
   void mangleExtFunctionInfo(const FunctionType *T);
+
+protected:
   void mangleBareFunctionType(const FunctionProtoType *T, bool MangleReturnType,
                               const FunctionDecl *FD = nullptr);
+
+private:
   void mangleNeonVectorType(const VectorType *T);
   void mangleNeonVectorType(const DependentVectorType *T);
   void mangleAArch64NeonVectorType(const VectorType *T);
@@ -3026,6 +3045,12 @@ void CXXNameMangler::mangleNameOrStandardSubstitution(const NamedDecl *ND) {
 }
 
 void CXXNameMangler::mangleType(const BuiltinType *T) {
+  // Uses the virtual impl function to allow derived class to modify the
+  // behavior of this function
+  mangleTypeImpl(T);
+}
+
+void CXXNameMangler::mangleTypeImpl(const BuiltinType *T) {
   //  <type>         ::= <builtin-type>
   //  <builtin-type> ::= v  # void
   //                 ::= w  # wchar_t
@@ -3515,10 +3540,14 @@ CXXNameMangler::mangleExtParameterInfo(FunctionProtoType::ExtParameterInfo PI) {
     mangleVendorQualifier("noescape");
 }
 
+void CXXNameMangler::mangleType(const FunctionProtoType *T) {
+  return mangleTypeImpl(T);
+}
+
 // <type>          ::= <function-type>
 // <function-type> ::= [<CV-qualifiers>] F [Y]
 //                      <bare-function-type> [<ref-qualifier>] E
-void CXXNameMangler::mangleType(const FunctionProtoType *T) {
+void CXXNameMangler::mangleTypeImpl(const FunctionProtoType *T) {
   mangleExtFunctionInfo(T);
 
   // Mangle CV-qualifiers, if present.  These are 'this' qualifiers,
@@ -3556,6 +3585,10 @@ void CXXNameMangler::mangleType(const FunctionProtoType *T) {
 }
 
 void CXXNameMangler::mangleType(const FunctionNoProtoType *T) {
+  return mangleTypeImpl(T);
+}
+
+void CXXNameMangler::mangleTypeImpl(const FunctionNoProtoType *T) {
   // Function types without prototypes can arise when mangling a function type
   // within an overloadable function in C. We mangle these as the absence of any
   // parameter types (not even an empty parameter list).
