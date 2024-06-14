@@ -240,7 +240,8 @@ public:
   const CGFunctionInfo &arrangeCXXMethodCall(const CallArgList &args,
                                              const FunctionProtoType *type,
                                              RequiredArgs required,
-                                             unsigned numPrefixArgs);
+                                             unsigned numPrefixArgs,
+                                             bool isMemberPointerCall);
   const CGFunctionInfo &
   arrangeUnprototypedMustTailThunk(const CXXMethodDecl *MD);
   const CGFunctionInfo &arrangeMSCtorClosure(const CXXConstructorDecl *CD,

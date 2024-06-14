@@ -410,6 +410,7 @@ enum class FnInfoOpts {
   IsInstanceMethod = 1 << 0,
   IsChainCall = 1 << 1,
   IsDelegateCall = 1 << 2,
+  IsCXXMemberPointerCall = 1 << 3,
 };
 
 inline FnInfoOpts operator|(FnInfoOpts A, FnInfoOpts B) {

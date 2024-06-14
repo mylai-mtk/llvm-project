@@ -580,6 +580,10 @@ class CGFunctionInfo final
   LLVM_PREFERRED_TYPE(bool)
   unsigned DelegateCall : 1;
 
+  /// Whether this function is a C++ member pointer call.
+  LLVM_PREFERRED_TYPE(bool)
+  unsigned CXXMemberPointerCall : 1;
+
   /// Whether this function is a CMSE nonsecure call
   LLVM_PREFERRED_TYPE(bool)
   unsigned CmseNSCall : 1;
@@ -638,7 +642,8 @@ class CGFunctionInfo final
 public:
   static CGFunctionInfo *
   create(unsigned llvmCC, bool instanceMethod, bool chainCall,
-         bool delegateCall, const FunctionType::ExtInfo &extInfo,
+         bool delegateCall, bool cxxMemberPointerCall,
+         const FunctionType::ExtInfo &extInfo,
          ArrayRef<ExtParameterInfo> paramInfos, CanQualType resultType,
          ArrayRef<CanQualType> argTypes, RequiredArgs required);
   void operator delete(void *p) { ::operator delete(p); }
@@ -681,6 +686,8 @@ public:
   bool isChainCall() const { return ChainCall; }
 
   bool isDelegateCall() const { return DelegateCall; }
+
+  bool isCXXMemberPointerCall() const { return CXXMemberPointerCall; }
 
   bool isCmseNSCall() const { return CmseNSCall; }
 
@@ -788,6 +795,7 @@ public:
   }
   static void Profile(llvm::FoldingSetNodeID &ID, bool InstanceMethod,
                       bool ChainCall, bool IsDelegateCall,
+                      bool CXXMemberPointerCall,
                       const FunctionType::ExtInfo &info,
                       ArrayRef<ExtParameterInfo> paramInfos,
                       RequiredArgs required, CanQualType resultType,
@@ -796,6 +804,7 @@ public:
     ID.AddBoolean(InstanceMethod);
     ID.AddBoolean(ChainCall);
     ID.AddBoolean(IsDelegateCall);
+    ID.AddBoolean(CXXMemberPointerCall);
     ID.AddBoolean(info.getNoReturn());
     ID.AddBoolean(info.getProducesResult());
     ID.AddBoolean(info.getNoCallerSavedRegs());
