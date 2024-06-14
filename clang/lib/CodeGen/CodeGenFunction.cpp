@@ -42,6 +42,7 @@
 #include "llvm/IR/FPEnv.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Intrinsics.h"
+#include "llvm/IR/IntrinsicsRISCV.h"
 #include "llvm/IR/MDBuilder.h"
 #include "llvm/IR/Operator.h"
 #include "llvm/Support/CRC.h"
@@ -2818,6 +2819,32 @@ void CodeGenFunction::EmitKCFIOperandBundle(
       Callee.getAbstractInfo().getCalleeFunctionProtoType();
   if (FP)
     Bundles.emplace_back("kcfi", CGM.CreateKCFITypeId(FP->desugar()));
+}
+
+void CodeGenFunction::EmitRISCVSetLpadLabelIntrin(
+    const CGFunctionInfo &CallInfo, const Decl *const TargetDecl,
+    const CGCallee &Callee) {
+  uint32_t Label;
+  if (isa_and_nonnull<FunctionDecl>(TargetDecl))
+    Label = CGM.calcRISCVZicfilpFuncSigLabel(
+        *static_cast<const FunctionDecl *>(TargetDecl));
+  else {
+    const FunctionType *FT = Callee.getAbstractInfo().getCalleeFunctionType();
+    if (!FT && TargetDecl && TargetDecl->getFunctionType())
+      FT = TargetDecl->getFunctionType();
+    assert(FT && "Failed to get callee function type!");
+
+    // Assumes all calls to virtual methods would be handled with TargetDecl
+    Label = CGM.calcRISCVZicfilpFuncSigLabel(*FT, CallInfo.isInstanceMethod(),
+                                             /*IsCXXVirtualMethod=*/false);
+  }
+  EmitRISCVSetLpadLabelIntrin(Label);
+}
+
+void CodeGenFunction::EmitRISCVSetLpadLabelIntrin(const uint32_t Label) {
+  Builder.CreateIntrinsic(
+      Builder.getVoidTy(), llvm::Intrinsic::riscv_set_lpad_label,
+      Builder.getIntN(getTarget().getTriple().getArchPointerBitWidth(), Label));
 }
 
 llvm::Value *CodeGenFunction::FormAArch64ResolverCondition(

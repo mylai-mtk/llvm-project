@@ -1684,6 +1684,8 @@ public:
     MustTailCallUndefinedGlobals.insert(Global);
   }
 
+  bool UseRISCVZicfilpFuncSigCFI;
+
 private:
   bool shouldDropDLLAttribute(const Decl *D, const llvm::GlobalValue *GV) const;
 

@@ -787,6 +787,10 @@ CGCallee ItaniumCXXABI::EmitLoadOfMemberFunctionPointer(
 
       FnVirtual = Builder.GetInsertBlock();
     }
+
+    if (CGM.UseRISCVZicfilpFuncSigCFI)
+      CGF.EmitRISCVSetLpadLabelIntrin(CGM.calcRISCVZicfilpFuncSigLabel(
+          *FPT, /*IsCXXInstanceMethod=*/true, /*IsCXXVirtualMethod=*/true));
   } // End of sanitizer scope
 
   CGF.EmitBranch(FnEnd);
@@ -831,6 +835,10 @@ CGCallee ItaniumCXXABI::EmitLoadOfMemberFunctionPointer(
       FnNonVirtual = Builder.GetInsertBlock();
     }
   }
+
+  if (CGM.UseRISCVZicfilpFuncSigCFI)
+    CGF.EmitRISCVSetLpadLabelIntrin(CGM.calcRISCVZicfilpFuncSigLabel(
+        *FPT, /*IsCXXInstanceMethod=*/true, /*IsCXXVirtualMethod=*/false));
 
   // We're done.
   CGF.EmitBlock(FnEnd);

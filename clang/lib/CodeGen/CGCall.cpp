@@ -5708,6 +5708,15 @@ RValue CodeGenFunction::EmitCall(const CGFunctionInfo &CallInfo,
   if (SanOpts.has(SanitizerKind::KCFI) &&
       !isa_and_nonnull<FunctionDecl>(TargetDecl))
     EmitKCFIOperandBundle(ConcreteCallee, BundleList);
+  else if (CGM.UseRISCVZicfilpFuncSigCFI) {
+    const bool IsIndirectCall =
+        !isa<llvm::Constant>(CalleePtr) && !isa<llvm::InlineAsm>(CalleePtr);
+    if (IsIndirectCall &&
+        // C++ member ptr calls already have their label set up at the func ptr
+        // prep site
+        !CallInfo.isCXXMemberPointerCall())
+      EmitRISCVSetLpadLabelIntrin(CallInfo, TargetDecl, ConcreteCallee);
+  }
 
   // Add the pointer-authentication bundle.
   EmitPointerAuthOperandBundle(ConcreteCallee.getPointerAuthInfo(), BundleList);

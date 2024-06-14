@@ -454,6 +454,18 @@ CodeGenModule::CodeGenModule(ASTContext &C,
   if (Context.getTargetInfo().getTriple().getArch() == llvm::Triple::x86)
     getModule().addModuleFlag(llvm::Module::Error, "NumRegisterParameters",
                               CodeGenOpts.NumRegisterParameters);
+
+  if (CodeGenOpts.CFProtectionBranch &&
+      getTarget().checkCFProtectionBranchSupported(getDiags())) {
+    auto Scheme = CodeGenOpts.getCFBranchLabelScheme();
+    if (getTarget().checkCFBranchLabelSchemeSupported(Scheme, getDiags())) {
+      if (Scheme == CFBranchLabelSchemeKind::Default)
+        Scheme = getTarget().getDefaultCFBranchLabelScheme();
+
+      UseRISCVZicfilpFuncSigCFI =
+          (Scheme == CFBranchLabelSchemeKind::FuncSig && getTriple().isRISCV());
+    }
+  }
 }
 
 CodeGenModule::~CodeGenModule() {}

@@ -5105,6 +5105,14 @@ public:
   void EmitKCFIOperandBundle(const CGCallee &Callee,
                              SmallVectorImpl<llvm::OperandBundleDef> &Bundles);
 
+  /// Emit RISC-V Zicfilp intrinsic that sets up the lpad label in reg X7
+  void EmitRISCVSetLpadLabelIntrin(const CGFunctionInfo &CallInfo,
+                                   const Decl *const TargetDecl,
+                                   const CGCallee &Callee);
+
+  /// Emit RISC-V Zicfilp intrinsic that sets up the lpad label in reg X7
+  void EmitRISCVSetLpadLabelIntrin(const uint32_t Label);
+
   /// Create a basic block that will either trap or call a handler function in
   /// the UBSan runtime with the provided arguments, and create a conditional
   /// branch to it.
