@@ -34,6 +34,7 @@
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/Value.h"
+#include "llvm/Support/RISCVISAUtils.h"
 #include "llvm/Support/ScopedPrinter.h"
 
 #include <optional>
@@ -786,6 +787,14 @@ CGCallee ItaniumCXXABI::EmitLoadOfMemberFunctionPointer(
 
       FnVirtual = Builder.GetInsertBlock();
     }
+
+    if (CGM.UseRISCVZicfilpFuncSigCFI) {
+      const std::string FuncSig = CGM.calcRISCVZicfilpFuncSig(
+          *FPT, /*IsMain=*/false, /*IsCXXInstanceMethod=*/true,
+          /*IsCXXVirtualMethod=*/true, /*IsCXXDestructor=*/false);
+      const uint32_t Label = llvm::RISCVISAUtils::zicfilpFuncSigHash(FuncSig);
+      CGF.EmitRISCVSetLpadLabelIntrin(Label);
+    }
   } // End of sanitizer scope
 
   CGF.EmitBranch(FnEnd);
@@ -829,6 +838,14 @@ CGCallee ItaniumCXXABI::EmitLoadOfMemberFunctionPointer(
 
       FnNonVirtual = Builder.GetInsertBlock();
     }
+  }
+
+  if (CGM.UseRISCVZicfilpFuncSigCFI) {
+    const std::string FuncSig = CGM.calcRISCVZicfilpFuncSig(
+        *FPT, /*IsMain=*/false, /*IsCXXInstanceMethod=*/true,
+        /*IsCXXVirtualMethod=*/false, /*IsCXXDestructor=*/false);
+    const uint32_t Label = llvm::RISCVISAUtils::zicfilpFuncSigHash(FuncSig);
+    CGF.EmitRISCVSetLpadLabelIntrin(Label);
   }
 
   // We're done.
