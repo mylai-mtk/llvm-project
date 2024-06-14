@@ -697,11 +697,9 @@ CodeGenTypes::arrangeBuiltinFunctionDeclaration(CanQualType resultType,
 ///
 /// numPrefixArgs is the number of ABI-specific prefix arguments we have. It
 /// does not count `this`.
-const CGFunctionInfo &
-CodeGenTypes::arrangeCXXMethodCall(const CallArgList &args,
-                                   const FunctionProtoType *proto,
-                                   RequiredArgs required,
-                                   unsigned numPrefixArgs) {
+const CGFunctionInfo &CodeGenTypes::arrangeCXXMethodCall(
+    const CallArgList &args, const FunctionProtoType *proto,
+    RequiredArgs required, unsigned numPrefixArgs, bool isMemberPointerCall) {
   assert(numPrefixArgs + 1 <= args.size() &&
          "Emitting a call with less args than the required prefix?");
   // Add one to account for `this`. It's a bit awkward here, but we don't count
@@ -712,10 +710,13 @@ CodeGenTypes::arrangeCXXMethodCall(const CallArgList &args,
   // FIXME: Kill copy.
   auto argTypes = getArgTypesForCall(Context, args);
 
+  auto opts = FnInfoOpts::IsInstanceMethod;
+  if (isMemberPointerCall)
+    opts |= FnInfoOpts::IsCXXMemberPointerCall;
+
   FunctionType::ExtInfo info = proto->getExtInfo();
-  return arrangeLLVMFunctionInfo(GetReturnType(proto->getReturnType()),
-                                 FnInfoOpts::IsInstanceMethod, argTypes, info,
-                                 paramInfos, required);
+  return arrangeLLVMFunctionInfo(GetReturnType(proto->getReturnType()), opts,
+                                 argTypes, info, paramInfos, required);
 }
 
 const CGFunctionInfo &CodeGenTypes::arrangeNullaryFunction() {
@@ -778,8 +779,11 @@ const CGFunctionInfo &CodeGenTypes::arrangeLLVMFunctionInfo(
       (opts & FnInfoOpts::IsChainCall) == FnInfoOpts::IsChainCall;
   bool isDelegateCall =
       (opts & FnInfoOpts::IsDelegateCall) == FnInfoOpts::IsDelegateCall;
+  bool isCXXMemberPointerCall = (opts & FnInfoOpts::IsCXXMemberPointerCall) ==
+                                FnInfoOpts::IsCXXMemberPointerCall;
   CGFunctionInfo::Profile(ID, isInstanceMethod, isChainCall, isDelegateCall,
-                          info, paramInfos, required, resultType, argTypes);
+                          isCXXMemberPointerCall, info, paramInfos, required,
+                          resultType, argTypes);
 
   void *insertPos = nullptr;
   CGFunctionInfo *FI = FunctionInfos.FindNodeOrInsertPos(ID, insertPos);
@@ -790,7 +794,8 @@ const CGFunctionInfo &CodeGenTypes::arrangeLLVMFunctionInfo(
 
   // Construct the function info.  We co-allocate the ArgInfos.
   FI = CGFunctionInfo::create(CC, isInstanceMethod, isChainCall, isDelegateCall,
-                              info, paramInfos, resultType, argTypes, required);
+                              isCXXMemberPointerCall, info, paramInfos,
+                              resultType, argTypes, required);
   FunctionInfos.InsertNode(FI, insertPos);
 
   bool inserted = FunctionsBeingProcessed.insert(FI).second;
@@ -825,13 +830,11 @@ const CGFunctionInfo &CodeGenTypes::arrangeLLVMFunctionInfo(
   return *FI;
 }
 
-CGFunctionInfo *CGFunctionInfo::create(unsigned llvmCC, bool instanceMethod,
-                                       bool chainCall, bool delegateCall,
-                                       const FunctionType::ExtInfo &info,
-                                       ArrayRef<ExtParameterInfo> paramInfos,
-                                       CanQualType resultType,
-                                       ArrayRef<CanQualType> argTypes,
-                                       RequiredArgs required) {
+CGFunctionInfo *CGFunctionInfo::create(
+    unsigned llvmCC, bool instanceMethod, bool chainCall, bool delegateCall,
+    bool cxxMemberPointerCall, const FunctionType::ExtInfo &info,
+    ArrayRef<ExtParameterInfo> paramInfos, CanQualType resultType,
+    ArrayRef<CanQualType> argTypes, RequiredArgs required) {
   assert(paramInfos.empty() || paramInfos.size() == argTypes.size());
   assert(!required.allowsOptionalArgs() ||
          required.getNumRequiredArgs() <= argTypes.size());
@@ -847,6 +850,7 @@ CGFunctionInfo *CGFunctionInfo::create(unsigned llvmCC, bool instanceMethod,
   FI->InstanceMethod = instanceMethod;
   FI->ChainCall = chainCall;
   FI->DelegateCall = delegateCall;
+  FI->CXXMemberPointerCall = cxxMemberPointerCall;
   FI->CmseNSCall = info.getCmseNSCall();
   FI->NoReturn = info.getNoReturn();
   FI->ReturnsRetained = info.getProducesResult();
