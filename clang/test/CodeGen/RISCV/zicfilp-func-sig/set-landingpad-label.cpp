@@ -10,3 +10,17 @@
 void indirectCallFptr(void (*Fptr)()) {
   Fptr();
 }
+
+class Class;
+// CHECK-LABEL: define{{.*}} @_Z21indirectCallMemberPtrP5ClassMS_FS0_vE(
+// CHECK-NEXT:    entry:
+// CHECK:         memptr.virtual:
+// CHECK:           call void @llvm.riscv.set.lpad.label.i64(i64 126408)
+// CHECK:         memptr.nonvirtual:
+// CHECK:           call void @llvm.riscv.set.lpad.label.i64(i64 789674)
+//
+// we pick `Class*` as the return type to show that the labels can be different
+// for virtual and non-virtual branches
+void indirectCallMemberPtr(Class *ClsPtr, Class* (Class::*Fptr)()) {
+  (ClsPtr->*Fptr)();
+}

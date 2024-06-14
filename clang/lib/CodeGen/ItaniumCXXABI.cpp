@@ -785,6 +785,19 @@ CGCallee ItaniumCXXABI::EmitLoadOfMemberFunctionPointer(
 
       FnVirtual = Builder.GetInsertBlock();
     }
+
+    if (CGM.getCFITypeIdScheme()
+        == CodeGenModule::CFITypeIdSchemeKind::RISCVZicfilpFuncSig) {
+      DEBUG_WITH_TYPE("zicfilp-cfi",
+        llvm::dbgs() << "Virtual branch of member pointer call at location [";
+        E->getSourceRange().print(llvm::dbgs(),
+                                  getContext().getSourceManager());
+        llvm::dbgs() << "] uses function type ["
+                     << QualType(FPT, 0).getAsString() << "] as CFI label";
+      );
+      CGF.EmitRISCVSetLpadLabelIntrin(CGF.getTargetHooks().calcCFITypeId(
+          *FPT, /*IsCXXInstanceMethod=*/true, /*IsCXXVirtualMethod=*/true));
+    }
   } // End of sanitizer scope
 
   CGF.EmitBranch(FnEnd);
@@ -828,6 +841,18 @@ CGCallee ItaniumCXXABI::EmitLoadOfMemberFunctionPointer(
 
       FnNonVirtual = Builder.GetInsertBlock();
     }
+  }
+
+  if (CGM.getCFITypeIdScheme()
+      == CodeGenModule::CFITypeIdSchemeKind::RISCVZicfilpFuncSig) {
+    DEBUG_WITH_TYPE("zicfilp-cfi",
+      llvm::dbgs() << "Normal branch of member pointer call at location [";
+      E->getSourceRange().print(llvm::dbgs(), getContext().getSourceManager());
+      llvm::dbgs() << "] uses function type ["
+                   << QualType(FPT, 0).getAsString() << "] as CFI label";
+    );
+    CGF.EmitRISCVSetLpadLabelIntrin(CGF.getTargetHooks().calcCFITypeId(
+        *FPT, /*IsCXXInstanceMethod=*/true, /*IsCXXVirtualMethod=*/false));
   }
 
   // We're done.
