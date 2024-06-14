@@ -43,8 +43,10 @@
 #include "llvm/IR/Instruction.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Intrinsics.h"
+#include "llvm/IR/IntrinsicsRISCV.h"
 #include "llvm/IR/MDBuilder.h"
 #include "llvm/Support/CRC.h"
+#include "llvm/Support/RISCVISAUtils.h"
 #include "llvm/Support/xxhash.h"
 #include "llvm/Transforms/Scalar/LowerExpectIntrinsic.h"
 #include "llvm/Transforms/Utils/PromoteMemToReg.h"
@@ -2859,6 +2861,59 @@ void CodeGenFunction::EmitKCFIOperandBundle(
       Callee.getAbstractInfo().getCalleeFunctionProtoType();
   if (FP)
     Bundles.emplace_back("kcfi", CGM.CreateKCFITypeId(FP->desugar()));
+}
+
+void CodeGenFunction::EmitRISCVSetLpadLabelIntrinByFuncSig(
+    const CGFunctionInfo &CallInfo, const Decl *const TargetDecl,
+    const CGCallee &Callee) {
+  const FunctionType *FT;
+  bool IsMain, IsCXXInstanceMethod, IsCXXVirtualMethod, IsCXXDestructor;
+  if (const auto *const FD = dyn_cast_or_null<FunctionDecl>(TargetDecl)) {
+    FT = FD->getFunctionType();
+    if (const IdentifierInfo *const ID = FD->getIdentifier())
+      IsMain = ID->isStr("main");
+    else
+      IsMain = false;
+    if (const auto *const MD = dyn_cast<CXXMethodDecl>(FD)) {
+      IsCXXInstanceMethod = MD->isInstance();
+      IsCXXVirtualMethod = MD->isVirtual();
+    } else {
+      IsCXXInstanceMethod = false;
+      IsCXXVirtualMethod = false;
+    }
+    IsCXXDestructor = isa<CXXDestructorDecl>(FD);
+  } else {
+    // Do whatever we can to get info about called target
+    FT = Callee.getAbstractInfo().getCalleeFunctionType();
+    if (!FT && TargetDecl && TargetDecl->getFunctionType())
+      FT = TargetDecl->getFunctionType();
+
+    IsCXXInstanceMethod = CallInfo.isInstanceMethod();
+
+    // These info about the called function are guessed, since we cannot get
+    // them here
+    IsMain = false;
+    IsCXXVirtualMethod = false;
+    IsCXXDestructor = false;
+  }
+  assert(FT && "Failed to get callee function type!");
+
+  const std::string FuncSig = CGM.calcRISCVZicfilpFuncSig(
+      *FT, IsMain, IsCXXInstanceMethod, IsCXXVirtualMethod, IsCXXDestructor);
+  const uint32_t Label = llvm::RISCVISAUtils::zicfilpFuncSigHash(FuncSig);
+  EmitRISCVSetLpadLabelIntrin(Label, FuncSig);
+}
+
+void CodeGenFunction::EmitRISCVSetLpadLabelIntrin(const uint32_t Label,
+                                                  const StringRef LabelSrc) {
+  llvm::LLVMContext &LCtx = getLLVMContext();
+  llvm::Value *const Args[] = {
+      Builder.getIntN(getTarget().getTriple().getArchPointerBitWidth(), Label),
+      llvm::MetadataAsValue::get(
+          LCtx, llvm::MDNode::get(LCtx, llvm::MDString::get(LCtx, LabelSrc))),
+  };
+  Builder.CreateIntrinsic(Builder.getVoidTy(),
+                          llvm::Intrinsic::riscv_set_lpad_label, Args);
 }
 
 llvm::Value *
