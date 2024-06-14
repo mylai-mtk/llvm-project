@@ -41,6 +41,7 @@
 #include "llvm/IR/FPEnv.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Intrinsics.h"
+#include "llvm/IR/IntrinsicsRISCV.h"
 #include "llvm/IR/MDBuilder.h"
 #include "llvm/IR/Operator.h"
 #include "llvm/Support/CRC.h"
@@ -2711,6 +2712,64 @@ void CodeGenFunction::EmitKCFIOperandBundle(
   if (FP)
     Bundles.emplace_back("kcfi",
         llvm::ConstantInt::get(CGM.Int32Ty, CGM.calcKCFITypeId(FP->desugar())));
+}
+
+void CodeGenFunction::EmitRISCVSetLpadLabelIntrin(
+    const CGFunctionInfo &CallInfo, const Decl * const TargetDecl,
+    const CGCallee &Callee) {
+  llvm::APInt CFITypeId{};
+  if (isa_and_nonnull<FunctionDecl>(TargetDecl)) {
+    DEBUG_WITH_TYPE("zicfilp-cfi",
+      llvm::dbgs() << "An indirect call through function decl at [";
+      TargetDecl->getSourceRange().print(llvm::dbgs(),
+                                         getContext().getSourceManager());
+      llvm::dbgs() << "] is found with original function type ["
+                   << QualType(TargetDecl->getFunctionType(), 0).getAsString()
+                   << "]\n";
+    );
+    CFITypeId = getTargetHooks().calcCFITypeId(
+        *static_cast<const FunctionDecl*>(TargetDecl));
+  } else {
+    const FunctionType *FT = Callee.getAbstractInfo().getCalleeFunctionType();
+    if (!FT && TargetDecl && TargetDecl->getFunctionType())
+      FT = TargetDecl->getFunctionType();
+    assert(FT && "Failed to get callee function type!");
+
+    DEBUG_WITH_TYPE("zicfilp-cfi",
+      llvm::dbgs() << "An indirect call through decl at [";
+      if (TargetDecl)
+        TargetDecl->getSourceRange().print(llvm::dbgs(),
+                                           getContext().getSourceManager());
+      llvm::dbgs() << "] is found with original function type ["
+                   << QualType(FT, 0).getAsString() << "]\n";
+    );
+
+    // TODO(mylai-mtk): Recheck if this assertion is mandated in spec.
+    //                  If so, re-implement it in Sema, else remove this.
+    assert((isa<FunctionProtoType>(FT) || CallInfo.arg_size() == 0) &&
+           "Un-prototyped functions are assumed to take no parameter when "
+           "RISC-V Zicfilp FuncSig CFI is enabled");
+
+    CFITypeId = getTargetHooks().calcCFITypeId(*FT,
+                                               CallInfo.isInstanceMethod(),
+                                               /*IsCXXVirtualMethod=*/false);
+  }
+  EmitRISCVSetLpadLabelIntrin(CFITypeId);
+}
+
+void CodeGenFunction::EmitRISCVSetLpadLabelIntrin(const llvm::APInt CFITypeId) {
+  // Since we do not have access to xlen here, we fallback to using arch bit
+  // width to determine xlen
+  llvm::ConstantInt *CFITypeIdInt = nullptr;
+  if (const llvm::Triple &T = getTarget().getTriple(); T.isRISCV64())
+    CFITypeIdInt = Builder.getInt64(CFITypeId.getZExtValue());
+  else if (T.isRISCV32())
+    CFITypeIdInt = Builder.getInt32(CFITypeId.getZExtValue());
+  else
+    llvm_unreachable("unhandled arch type!");
+
+  Builder.CreateIntrinsic(Builder.getVoidTy(),
+                          llvm::Intrinsic::riscv_set_lpad_label, CFITypeIdInt);
 }
 
 llvm::Value *CodeGenFunction::FormAArch64ResolverCondition(

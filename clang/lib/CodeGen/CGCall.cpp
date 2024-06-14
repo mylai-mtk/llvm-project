@@ -5645,9 +5645,20 @@ RValue CodeGenFunction::EmitCall(const CGFunctionInfo &CallInfo,
   SmallVector<llvm::OperandBundleDef, 1> BundleList =
       getBundlesForFunclet(CalleePtr);
 
-  if (CGM.getCFITypeIdScheme() == CodeGenModule::CFITypeIdSchemeKind::KCFI &&
+  if (const auto Scheme = CGM.getCFITypeIdScheme();
+      Scheme == CodeGenModule::CFITypeIdSchemeKind::KCFI &&
       !isa_and_nonnull<FunctionDecl>(TargetDecl))
     EmitKCFIOperandBundle(ConcreteCallee, BundleList);
+  else if (Scheme ==
+           CodeGenModule::CFITypeIdSchemeKind::RISCVZicfilpFuncSig) {
+    const bool IsIndirectCall = !isa<llvm::Constant>(CalleePtr) &&
+                                !isa<llvm::InlineAsm>(CalleePtr);
+    if (IsIndirectCall &&
+        // C++ member ptr calls already have their label set up at the func ptr
+        // prep site
+        !CallInfo.isCXXMemberPointerCall())
+      EmitRISCVSetLpadLabelIntrin(CallInfo, TargetDecl, ConcreteCallee);
+  }
 
   if (const FunctionDecl *FD = dyn_cast_or_null<FunctionDecl>(CurFuncDecl))
     if (FD->hasAttr<StrictFPAttr>())
