@@ -223,6 +223,8 @@ class RISCVAsmParser : public MCTargetAsmParser {
   bool parseDirectiveInsn(SMLoc L);
   bool parseDirectiveVariantCC();
 
+  bool parseArch(std::string &ArchOut, SMLoc &LocOut);
+
   /// Helper to reset target features for a new arch string. It
   /// also records the new arch string that is expanded by RISCVISAInfo
   /// and reports error for invalid arch string.
@@ -2833,13 +2835,10 @@ bool RISCVAsmParser::parseDirectiveOption() {
       else
         Type = RISCVOptionArchArgType::Full;
 
-      if (Parser.getTok().isNot(AsmToken::Identifier))
-        return Error(Parser.getTok().getLoc(),
-                     "unexpected token, expected identifier");
-
-      StringRef Arch = Parser.getTok().getString();
-      SMLoc Loc = Parser.getTok().getLoc();
-      Parser.Lex();
+      std::string Arch;
+      SMLoc Loc;
+      if (parseArch(Arch, Loc))
+        return true;
 
       if (Type == RISCVOptionArchArgType::Full) {
         std::string Result;
@@ -2852,7 +2851,7 @@ bool RISCVAsmParser::parseDirectiveOption() {
 
       ArrayRef<SubtargetFeatureKV> KVArray(RISCVFeatureKV);
       auto Ext = llvm::lower_bound(KVArray, Arch);
-      if (Ext == KVArray.end() || StringRef(Ext->Key) != Arch ||
+      if (Ext == KVArray.end() || Ext->Key != Arch ||
           !RISCVISAInfo::isSupportedExtension(Arch)) {
         if (isDigit(Arch.back()))
           return Error(
@@ -3095,6 +3094,27 @@ bool RISCVAsmParser::parseDirectiveVariantCC() {
     return true;
   getTargetStreamer().emitDirectiveVariantCC(
       *getContext().getOrCreateSymbol(Name));
+  return false;
+}
+
+bool RISCVAsmParser::parseArch(std::string &ArchOut, SMLoc &LocOut) {
+  if (getParser().getTok().isNot(AsmToken::Identifier))
+    return Error(getParser().getTok().getLoc(),
+                 "unexpected token, expected identifier");
+
+  ArchOut = getParser().getTok().getString().str();
+  LocOut = getParser().getTok().getLoc();
+  getParser().Lex();
+
+  while (getParser().getTok().isNot(AsmToken::Comma) &&
+         getParser().getTok().isNot(AsmToken::EndOfStatement)) {
+    const AsmToken &Tok = getParser().getTok();
+    if (Tok.isNot(AsmToken::Minus) && Tok.isNot(AsmToken::Identifier))
+      return Error(Tok.getLoc(), "unexpected token, expected '-'/identifier");
+    ArchOut += Tok.getString();
+    getParser().Lex();
+  }
+
   return false;
 }
 

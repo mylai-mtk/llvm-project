@@ -391,6 +391,9 @@ bool RISCVISAInfo::isSupportedExtensionFeature(StringRef Ext) {
 bool RISCVISAInfo::isSupportedExtension(StringRef Ext) {
   verifyTables();
 
+  if (Ext.starts_with("experimental-"))
+    Ext = Ext.drop_front(strlen("experimental-"));
+
   for (auto ExtInfo : {ArrayRef(SupportedExtensions),
                        ArrayRef(SupportedExperimentalExtensions)}) {
     auto I = llvm::lower_bound(ExtInfo, Ext, LessExtName());
