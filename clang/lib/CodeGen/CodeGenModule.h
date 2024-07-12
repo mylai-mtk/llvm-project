@@ -1460,8 +1460,8 @@ public:
   /// Generate a cross-DSO type identifier for MD.
   llvm::ConstantInt *CreateCrossDsoCfiTypeId(llvm::Metadata *MD);
 
-  /// Generate a KCFI type identifier for T.
-  llvm::ConstantInt *CreateKCFITypeId(QualType T);
+  /// Calculate a KCFI type identifier for T.
+  llvm::APInt calcKCFITypeId(QualType T);
 
   /// Create a metadata identifier for the given type. This may either be an
   /// MDString (for external identifiers) or a distinct unnamed MDNode (for
@@ -1486,8 +1486,11 @@ public:
     return CFITypeIdScheme;
   }
 
-  /// Set type metadata to the given function.
-  void setCFIType(const FunctionDecl *FD, llvm::Function *F);
+  /// Calculate CFI type ID based on current scheme.
+  llvm::APInt calcCFITypeId(const FunctionDecl &FD);
+
+  /// Set cfi_type metadata to the given function.
+  void setCFIType(const FunctionDecl &FD, llvm::Function &F);
 
   /// Emit CFI type identifier constants and remove unused identifiers.
   void finalizeCFITypes();

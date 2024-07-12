@@ -2709,7 +2709,8 @@ void CodeGenFunction::EmitKCFIOperandBundle(
   const FunctionProtoType *FP =
       Callee.getAbstractInfo().getCalleeFunctionProtoType();
   if (FP)
-    Bundles.emplace_back("kcfi", CGM.CreateKCFITypeId(FP->desugar()));
+    Bundles.emplace_back("kcfi",
+        llvm::ConstantInt::get(CGM.Int32Ty, CGM.calcKCFITypeId(FP->desugar())));
 }
 
 llvm::Value *CodeGenFunction::FormAArch64ResolverCondition(

@@ -2058,7 +2058,7 @@ llvm::ConstantInt *CodeGenModule::CreateCrossDsoCfiTypeId(llvm::Metadata *MD) {
   return llvm::ConstantInt::get(Int64Ty, llvm::MD5Hash(MDS->getString()));
 }
 
-llvm::ConstantInt *CodeGenModule::CreateKCFITypeId(QualType T) {
+llvm::APInt CodeGenModule::calcKCFITypeId(QualType T) {
   if (auto *FnType = T->getAs<FunctionProtoType>())
     T = getContext().getFunctionType(
         FnType->getReturnType(), FnType->getParamTypes(),
@@ -2072,8 +2072,7 @@ llvm::ConstantInt *CodeGenModule::CreateKCFITypeId(QualType T) {
   if (getCodeGenOpts().SanitizeCfiICallNormalizeIntegers)
     Out << ".normalized";
 
-  return llvm::ConstantInt::get(Int32Ty,
-                                static_cast<uint32_t>(llvm::xxHash64(OutName)));
+  return llvm::APInt(32, static_cast<uint32_t>(llvm::xxHash64(OutName)));
 }
 
 void CodeGenModule::SetLLVMFunctionAttributes(GlobalDecl GD,
@@ -2692,12 +2691,30 @@ void CodeGenModule::CreateFunctionTypeMetadataForIcall(const FunctionDecl *FD,
       F->addTypeMetadata(0, llvm::ConstantAsMetadata::get(CrossDsoTypeId));
 }
 
-void CodeGenModule::setCFIType(const FunctionDecl *FD, llvm::Function *F) {
-  llvm::LLVMContext &Ctx = F->getContext();
+llvm::APInt CodeGenModule::calcCFITypeId(const FunctionDecl &FD) {
+  switch (getCFITypeIdScheme()) {
+  case CFITypeIdSchemeKind::None:
+    return llvm::APInt();
+  case CFITypeIdSchemeKind::KCFI:
+    return calcKCFITypeId(FD.getType());
+  case CFITypeIdSchemeKind::RISCVZicfilpSimple:
+    return llvm::APInt(20, 0);
+  case CFITypeIdSchemeKind::RISCVZicfilpFuncSig:
+    return getTargetCodeGenInfo().calcCFITypeId(FD);
+  }
+  llvm_unreachable("Unhandled CFI Type ID scheme!");
+}
+
+void CodeGenModule::setCFIType(const FunctionDecl &FD, llvm::Function &F) {
+  const llvm::APInt CFITypeId = calcCFITypeId(FD);
+  llvm::LLVMContext &Ctx = F.getContext();
   llvm::MDBuilder MDB(Ctx);
-  F->setMetadata(llvm::LLVMContext::MD_cfi_type,
-                 llvm::MDNode::get(
-                     Ctx, MDB.createConstant(CreateKCFITypeId(FD->getType()))));
+  assert(CFITypeId.isIntN(32) &&
+         "cfi_type metadata can only host 32-bit type ID");
+  auto CFITypeIdLLVMConst = llvm::ConstantInt::get(Int32Ty,
+                                                   CFITypeId.getZExtValue());
+  F.setMetadata(llvm::LLVMContext::MD_cfi_type,
+                llvm::MDNode::get(Ctx, MDB.createConstant(CFITypeIdLLVMConst)));
 }
 
 static bool allowKCFIIdentifier(StringRef Name) {
@@ -2822,8 +2839,8 @@ void CodeGenModule::SetFunctionAttributes(GlobalDecl GD, llvm::Function *F,
       !CodeGenOpts.SanitizeCfiCanonicalJumpTables)
     CreateFunctionTypeMetadataForIcall(FD, F);
 
-  if (getCFITypeIdScheme() == CFITypeIdSchemeKind::KCFI)
-    setCFIType(FD, F);
+  if (getCFITypeIdScheme() != CFITypeIdSchemeKind::None)
+    setCFIType(*FD, *F);
 
   if (getLangOpts().OpenMP && FD->hasAttr<OMPDeclareSimdDeclAttr>())
     getOpenMPRuntime().emitDeclareSimdFunction(FD, F);
