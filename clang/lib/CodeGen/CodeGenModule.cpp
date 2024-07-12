@@ -925,6 +925,8 @@ void CodeGenModule::Release() {
   }
   if (LangOpts.Sanitize.has(SanitizerKind::KCFI))
     finalizeKCFITypes();
+  if (UseRISCVZicfilpFuncSigCFI)
+    finalizeRISCVZicfilpFuncSigLabels();
   emitAtAvailableLinkGuard();
   if (Context.getTargetInfo().getTriple().isWasm())
     EmitMainVoidAlias();
@@ -2883,6 +2885,16 @@ void CodeGenModule::setKCFIType(const FunctionDecl *FD, llvm::Function *F) {
                      Ctx, MDB.createConstant(CreateKCFITypeId(FD->getType()))));
 }
 
+void CodeGenModule::setRISCVZicfilpFuncSigLabel(const FunctionDecl *FD,
+                                                llvm::Function *F) {
+  llvm::LLVMContext &Ctx = F->getContext();
+  llvm::MDBuilder MDB(Ctx);
+  F->setMetadata(
+      "riscv_lpad_label",
+      llvm::MDNode::get(Ctx, MDB.createConstant(llvm::ConstantInt::get(
+                                 Int32Ty, calcRISCVZicfilpFuncSigLabel(*FD)))));
+}
+
 static bool allowKCFIIdentifier(StringRef Name) {
   // KCFI type identifier constants are only necessary for external assembly
   // functions, which means it's safe to skip unusual names. Subset of
@@ -2920,6 +2932,29 @@ void CodeGenModule::finalizeKCFITypes() {
                        Name + ", " + Twine(Type->getZExtValue()) + "\n")
                           .str();
     M.appendModuleInlineAsm(Asm);
+  }
+}
+
+void CodeGenModule::finalizeRISCVZicfilpFuncSigLabels() {
+  llvm::Module &M = getModule();
+  for (llvm::Function &F : M.functions())
+    finalizeRISCVZicfilpFuncSigLabel(F);
+}
+
+void CodeGenModule::finalizeRISCVZicfilpFuncSigLabel(llvm::Function &F) {
+  const unsigned MDKindID = F.getContext().getMDKindID("riscv_lpad_label");
+  if (!F.hasAddressTaken() && F.hasLocalLinkage()) {
+    F.eraseMetadata(MDKindID);
+    return;
+  }
+
+  const llvm::MDNode *MD = F.getMetadata(MDKindID);
+  if (!MD) {
+    GlobalDecl GD;
+    if (!lookupRepresentativeDecl(F.getName(), GD))
+      return;
+
+    setRISCVZicfilpFuncSigLabel(cast<FunctionDecl>(GD.getDecl()), &F);
   }
 }
 
@@ -3007,6 +3042,9 @@ void CodeGenModule::SetFunctionAttributes(GlobalDecl GD, llvm::Function *F,
 
   if (LangOpts.Sanitize.has(SanitizerKind::KCFI))
     setKCFIType(FD, F);
+
+  if (UseRISCVZicfilpFuncSigCFI)
+    setRISCVZicfilpFuncSigLabel(FD, F);
 
   if (getLangOpts().OpenMP && FD->hasAttr<OMPDeclareSimdDeclAttr>())
     getOpenMPRuntime().emitDeclareSimdFunction(FD, F);

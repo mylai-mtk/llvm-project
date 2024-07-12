@@ -1556,8 +1556,17 @@ public:
   /// Set type metadata to the given function.
   void setKCFIType(const FunctionDecl *FD, llvm::Function *F);
 
+  /// Set `!zicfilp_func_sig_label` metadata to the given function.
+  void setRISCVZicfilpFuncSigLabel(const FunctionDecl *FD, llvm::Function *F);
+
   /// Emit KCFI type identifier constants and remove unused identifiers.
   void finalizeKCFITypes();
+
+  /// Fixup RISCV Zicfilp func-sig CFI labels
+  void finalizeRISCVZicfilpFuncSigLabels();
+
+  /// Fixup RISCV Zicfilp func-sig CFI label for llvm::Function
+  void finalizeRISCVZicfilpFuncSigLabel(llvm::Function &F);
 
   /// Calculate RISC-V Zicfilp func-sig scheme CFI label
   uint32_t calcRISCVZicfilpFuncSigLabel(const FunctionType &FT,
