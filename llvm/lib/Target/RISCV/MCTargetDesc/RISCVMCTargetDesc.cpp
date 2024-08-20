@@ -310,7 +310,35 @@ public:
     else
       return {};
 
-    constexpr uint64_t FirstEntryAt = 32, EntrySize = 16;
+    uint64_t FirstEntryAt, EntrySize, AuipcInsnOffsetInEntry,
+        LoadInsnOffsetInEntry;
+    const auto IsLpadInsn = [](const uint32_t Insn) -> bool {
+      return (Insn & 0xFFF) == 0x17;
+    };
+    const bool PltBeginsWithLpad =
+        IsLpadInsn(support::endian::read32le(PltContents.data()));
+    if (PltBeginsWithLpad) {
+      FirstEntryAt = 48;
+      AuipcInsnOffsetInEntry = 4;
+      LoadInsnOffsetInEntry = 8;
+
+      const uint32_t LpadInsn =
+          support::endian::read32le(PltContents.data() + FirstEntryAt);
+      if (!IsLpadInsn(LpadInsn))
+        return {};
+
+      const bool IsLabeledLpad = LpadInsn & 0xFFFFF000;
+      if (IsLabeledLpad)
+        EntrySize = 32;
+      else
+        EntrySize = 16;
+    } else {
+      FirstEntryAt = 32;
+      EntrySize = 16;
+      AuipcInsnOffsetInEntry = 0;
+      LoadInsnOffsetInEntry = 4;
+    }
+
     if (PltContents.size() < FirstEntryAt + EntrySize)
       return {};
 
@@ -318,21 +346,21 @@ public:
     for (uint64_t EntryStart = FirstEntryAt,
                   EntryStartEnd = PltContents.size() + 1 - EntrySize;
          EntryStart < EntryStartEnd; EntryStart += EntrySize) {
-      const uint32_t AuipcInsn =
-          support::endian::read32le(PltContents.data() + EntryStart);
+      const uint32_t AuipcInsn = support::endian::read32le(
+          PltContents.data() + EntryStart + AuipcInsnOffsetInEntry);
       const bool IsAuipc = (AuipcInsn & 0x7F) == 0x17;
       if (!IsAuipc)
         continue;
 
-      const uint32_t LoadInsn =
-          support::endian::read32le(PltContents.data() + EntryStart + 4);
+      const uint32_t LoadInsn = support::endian::read32le(
+          PltContents.data() + EntryStart + LoadInsnOffsetInEntry);
       const bool IsLoad = (LoadInsn & 0x707F) == LoadInsnOpCode;
       if (!IsLoad)
         continue;
 
-      const uint64_t GotPltSlotVA = PltSectionVA + EntryStart +
-                                    (AuipcInsn & 0xFFFFF000) +
-                                    ((LoadInsn & 0xFFF00000) >> 20);
+      const uint64_t GotPltSlotVA =
+          PltSectionVA + EntryStart + AuipcInsnOffsetInEntry +
+          (AuipcInsn & 0xFFFFF000) + ((LoadInsn & 0xFFF00000) >> 20);
       Results.emplace_back(PltSectionVA + EntryStart, GotPltSlotVA);
     }
 
