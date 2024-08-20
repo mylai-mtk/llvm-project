@@ -298,6 +298,47 @@ public:
     }
   }
 
+  /// Returns (PLT virtual address, GOT virtual address) pairs for PLT entries.
+  std::vector<std::pair<uint64_t, uint64_t>>
+  findPltEntries(uint64_t PltSectionVA, ArrayRef<uint8_t> PltContents,
+                 const Triple &TargetTriple) const override {
+    uint32_t LoadInsnOpCode;
+    if (TargetTriple.isRISCV64())
+      LoadInsnOpCode = 0x3003; // ld
+    else if (TargetTriple.isRISCV32())
+      LoadInsnOpCode = 0x2003; // lw
+    else
+      return {};
+
+    constexpr uint64_t FirstEntryAt = 32, EntrySize = 16;
+    if (PltContents.size() < FirstEntryAt + EntrySize)
+      return {};
+
+    std::vector<std::pair<uint64_t, uint64_t>> Results;
+    for (uint64_t EntryStart = FirstEntryAt,
+                  EntryStartEnd = PltContents.size() + 1 - EntrySize;
+         EntryStart < EntryStartEnd; EntryStart += EntrySize) {
+      const uint32_t AuipcInsn =
+          support::endian::read32le(PltContents.data() + EntryStart);
+      const bool IsAuipc = (AuipcInsn & 0x7F) == 0x17;
+      if (!IsAuipc)
+        continue;
+
+      const uint32_t LoadInsn =
+          support::endian::read32le(PltContents.data() + EntryStart + 4);
+      const bool IsLoad = (LoadInsn & 0x707F) == LoadInsnOpCode;
+      if (!IsLoad)
+        continue;
+
+      const uint64_t GotPltSlotVA = PltSectionVA + EntryStart +
+                                    (AuipcInsn & 0xFFFFF000) +
+                                    ((LoadInsn & 0xFFF00000) >> 20);
+      Results.emplace_back(PltSectionVA + EntryStart, GotPltSlotVA);
+    }
+
+    return Results;
+  }
+
 private:
   static bool maybeReturnAddress(MCRegister Reg) {
     // X1 is used for normal returns, X5 for returns from outlined functions.
