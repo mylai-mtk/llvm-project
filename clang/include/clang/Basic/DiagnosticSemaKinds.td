@@ -5980,6 +5980,9 @@ def warn_strict_uses_without_prototype : Warning<
   "passing arguments to %select{a function|%1}0 without a prototype is "
   "deprecated in all versions of C and is not supported in C23">,
   InGroup<DeprecatedNonPrototype>;
+def warn_indirect_call_noproto_with_args_breaks_prototype_cfi : Warning<
+  "indirectly calling an un-prototyped function with arguments may cause "
+  "prototype-based control flow integrity to fail at runtime">;
 def warn_missing_prototype : Warning<
   "no previous prototype for function %0">,
   InGroup<DiagGroup<"missing-prototypes">>, DefaultIgnore;
