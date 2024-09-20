@@ -557,7 +557,6 @@ void RISCVPassConfig::addPreRegAlloc() {
 
   addPass(createRISCVInsertReadWriteCSRPass());
   addPass(createRISCVInsertWriteVXRMPass());
-  addPass(createRISCVLandingPadSetupPass());
 
   // Run RISCVInsertVSETVLI after PHI elimination. On O1 and above do it after
   // register coalescing so needVSETVLIPHI doesn't need to look through COPYs.
