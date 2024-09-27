@@ -2939,6 +2939,10 @@ void CodeGenModule::finalizeRISCVZicfilpFuncSigLabels() {
   llvm::Module &M = getModule();
   for (llvm::Function &F : M.functions())
     finalizeRISCVZicfilpFuncSigLabel(F);
+
+  for (const llvm::GlobalAlias &GA : M.aliases())
+    if (!GA.hasLocalLinkage())
+      finalizeRISCVZicfilpFuncSigLabel(GA);
 }
 
 void CodeGenModule::finalizeRISCVZicfilpFuncSigLabel(llvm::Function &F) {
@@ -2955,7 +2959,47 @@ void CodeGenModule::finalizeRISCVZicfilpFuncSigLabel(llvm::Function &F) {
       return;
 
     setRISCVZicfilpFuncSigLabel(cast<FunctionDecl>(GD.getDecl()), &F);
+    MD = F.getMetadata(MDKindID);
   }
+
+  const uint32_t Label =
+      llvm::mdconst::extract<llvm::ConstantInt>(MD->getOperand(0))
+          ->getZExtValue();
+  const std::string Asm = (".weak __riscv_lpad_label_" + F.getName() +
+                           "\n"
+                           ".set __riscv_lpad_label_" +
+                           F.getName() + ", " + Twine(Label) + "\n")
+                              .str();
+  getModule().appendModuleInlineAsm(Asm);
+}
+
+void CodeGenModule::finalizeRISCVZicfilpFuncSigLabel(
+    const llvm::GlobalAlias &GA) {
+  const llvm::Constant *Aliasee = GA.getAliasee();
+  while (const llvm::GlobalAlias *AnotherAlias =
+             dyn_cast<llvm::GlobalAlias>(Aliasee))
+    Aliasee = AnotherAlias->getAliasee();
+  if (!Aliasee->hasName() || !isa<llvm::Function>(Aliasee))
+    return;
+
+  const llvm::MDNode *MD =
+      cast<const llvm::Function>(Aliasee)->getMetadata("riscv_lpad_label");
+  if (!MD)
+    // This method is assumed to be called after
+    // `finalizeRISCVZicfilpFuncSigLabel(llvm::Function &)`, so don't bother
+    // looking up declaration and calculate label for Functions without
+    // `!riscv_lpad_label`. They would already have it if it can be set in
+    // `finalizeRISCVZicfilpFuncSigLabel(llvm::Function &)`.
+    return;
+  const uint32_t Label =
+      llvm::mdconst::extract<llvm::ConstantInt>(MD->getOperand(0))
+          ->getZExtValue();
+  const std::string Asm = (".weak __riscv_lpad_label_" + GA.getName() +
+                           "\n"
+                           ".set __riscv_lpad_label_" +
+                           GA.getName() + ", " + Twine(Label) + "\n")
+                              .str();
+  getModule().appendModuleInlineAsm(Asm);
 }
 
 void CodeGenModule::SetFunctionAttributes(GlobalDecl GD, llvm::Function *F,

@@ -1562,11 +1562,14 @@ public:
   /// Emit KCFI type identifier constants and remove unused identifiers.
   void finalizeKCFITypes();
 
-  /// Fixup RISCV Zicfilp func-sig CFI labels
+  /// Fixup and emit RISCV Zicfilp func-sig CFI labels
   void finalizeRISCVZicfilpFuncSigLabels();
 
-  /// Fixup RISCV Zicfilp func-sig CFI label for llvm::Function
+  /// Fixup and emit RISCV Zicfilp func-sig CFI label for llvm::Function
   void finalizeRISCVZicfilpFuncSigLabel(llvm::Function &F);
+
+  /// Fixup and emit RISCV Zicfilp func-sig CFI label for llvm::GlobalAlias
+  void finalizeRISCVZicfilpFuncSigLabel(const llvm::GlobalAlias &GA);
 
   /// Calculate RISC-V Zicfilp func-sig scheme CFI label
   uint32_t calcRISCVZicfilpFuncSigLabel(const FunctionType &FT,
