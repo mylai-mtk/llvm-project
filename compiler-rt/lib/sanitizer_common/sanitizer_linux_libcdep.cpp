@@ -222,7 +222,7 @@ static void GetGLibcVersion(int *major, int *minor, int *patch) {
 // On glibc x86_64, ThreadDescriptorSize() needs to be precise due to the usage
 // of g_tls_size. On other targets, ThreadDescriptorSize() is only used by lsan
 // to get the pointer to thread-specific data keys in the thread control block.
-#  if (SANITIZER_FREEBSD || SANITIZER_GLIBC) && !SANITIZER_GO
+#  if (SANITIZER_FREEBSD || SANITIZER_GLIBC || SANITIZER_LINUX) && !SANITIZER_GO
 // sizeof(struct pthread) from glibc.
 static uptr thread_descriptor_size;
 
@@ -235,12 +235,8 @@ static uptr ThreadDescriptorSizeFallback() {
   int minor;
   int patch;
   GetGLibcVersion(&major, &minor, &patch);
-#      else   // SANITIZER_GLIBC
-  return 0;
-#      endif  // SANITIZER_GLIBC
-#    endif
 
-#    if defined(__x86_64__) || defined(__i386__) || defined(__arm__)
+#        if defined(__x86_64__) || defined(__i386__) || defined(__arm__)
   /* sizeof(struct pthread) values from various glibc versions.  */
   if (SANITIZER_X32)
     return 1728;  // Assume only one particular version for x32.
@@ -265,9 +261,9 @@ static uptr ThreadDescriptorSizeFallback() {
     return FIRST_32_SECOND_64(1216, 2304);
   // minor == 32
   return FIRST_32_SECOND_64(1344, 2496);
-#    endif
+#        endif
 
-#    if SANITIZER_RISCV64
+#        if SANITIZER_RISCV64
   // TODO: consider adding an optional runtime check for an unknown (untested)
   // glibc version
   if (minor <= 28)  // WARNING: the highest tested version is 2.29
@@ -275,6 +271,10 @@ static uptr ThreadDescriptorSizeFallback() {
   if (minor <= 31)
     return 1772;  // tested against glibc 2.29, 2.31
   return 1936;    // tested against glibc 2.32
+#        endif
+#      else   // SANITIZER_GLIBC
+  return 0;
+#      endif  // SANITIZER_GLIBC
 #    endif
 
 #    if defined(__s390__) || defined(__sparc__)
