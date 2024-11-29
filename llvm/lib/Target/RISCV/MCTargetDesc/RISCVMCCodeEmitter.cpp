@@ -419,6 +419,7 @@ unsigned RISCVMCCodeEmitter::getImmOpValue(const MCInst &MI, unsigned OpNo,
   MCExpr::ExprKind Kind = Expr->getKind();
   RISCV::Fixups FixupKind = RISCV::fixup_riscv_invalid;
   bool RelaxCandidate = false;
+  unsigned EncodedPlaceholder = 0;
   if (Kind == MCExpr::Target) {
     const RISCVMCExpr *RVExpr = cast<RISCVMCExpr>(Expr);
 
@@ -504,6 +505,22 @@ unsigned RISCVMCCodeEmitter::getImmOpValue(const MCInst &MI, unsigned OpNo,
     case RISCVMCExpr::VK_RISCV_TLSDESC_CALL:
       FixupKind = RISCV::fixup_riscv_tlsdesc_call;
       break;
+    case RISCVMCExpr::VK_RISCV_LPAD_LABEL: {
+      FixupKind = RISCV::fixup_riscv_lpad;
+      RelaxCandidate = true;
+
+      // Provide concrete label value here to be encoded into instruction
+      // instead of providing a dummy 0. The psABI requires the emissions of
+      // LPAD relocations, but is ambigious about whether the linker should fill
+      // in the label with the relocation value, so it's better to encode the
+      // label here in case linker does not perform actual relocation
+      int64_t Label;
+      [[maybe_unused]] const bool EvalSuccess =
+          RVExpr->evaluateAsConstant(Label);
+      assert(EvalSuccess && "An RISC-V lpad label is expected to be constant");
+      EncodedPlaceholder = Label & 0xFFFFFLL;
+      break;
+    }
     }
   } else if ((Kind == MCExpr::SymbolRef &&
                  cast<MCSymbolRefExpr>(Expr)->getKind() ==
@@ -540,7 +557,7 @@ unsigned RISCVMCCodeEmitter::getImmOpValue(const MCInst &MI, unsigned OpNo,
     ++MCNumFixups;
   }
 
-  return 0;
+  return EncodedPlaceholder;
 }
 
 unsigned RISCVMCCodeEmitter::getVMaskReg(const MCInst &MI, unsigned OpNo,

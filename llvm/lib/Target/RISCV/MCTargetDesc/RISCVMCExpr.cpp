@@ -29,6 +29,7 @@ using namespace llvm;
 
 const RISCVMCExpr *RISCVMCExpr::create(const MCExpr *Expr, VariantKind Kind,
                                        MCContext &Ctx) {
+  assert(Kind != VK_RISCV_LPAD_LABEL && "Create RISCVLpadLabelMCExpr instead!");
   return new (Ctx) RISCVMCExpr(Expr, Kind);
 }
 
@@ -123,6 +124,7 @@ RISCVMCExpr::VariantKind RISCVMCExpr::getVariantKindForName(StringRef name) {
       .Case("tlsdesc_load_lo", VK_RISCV_TLSDESC_LOAD_LO)
       .Case("tlsdesc_add_lo", VK_RISCV_TLSDESC_ADD_LO)
       .Case("tlsdesc_call", VK_RISCV_TLSDESC_CALL)
+      .Case("lpad_label", VK_RISCV_LPAD_LABEL)
       .Default(VK_RISCV_Invalid);
 }
 
@@ -165,6 +167,8 @@ StringRef RISCVMCExpr::getVariantKindName(VariantKind Kind) {
     return "call_plt";
   case VK_RISCV_32_PCREL:
     return "32_pcrel";
+  case VK_RISCV_LPAD_LABEL:
+    return "lpad_label";
   }
   llvm_unreachable("Invalid ELF symbol kind");
 }
@@ -243,5 +247,37 @@ int64_t RISCVMCExpr::evaluateAsInt64(int64_t Value) const {
   case VK_RISCV_HI:
     // Add 1 if bit 11 is 1, to compensate for low 12 bits being negative.
     return ((Value + 0x800) >> 12) & 0xfffff;
+  case VK_RISCV_LPAD_LABEL:
+    return Value;
   }
+}
+
+const RISCVLpadLabelMCExpr *
+RISCVLpadLabelMCExpr::create(const uint32_t CFITok,
+                             const MCSymbol *const AnchorSym,
+                             const StringRef CFITokSrc, MCContext &Ctx) {
+  return new (Ctx) RISCVLpadLabelMCExpr(MCConstantExpr::create(CFITok, Ctx),
+                                        AnchorSym, CFITokSrc);
+}
+
+bool RISCVLpadLabelMCExpr::evaluateAsRelocatableImpl(
+    MCValue &Res, const MCAssembler *Asm, const MCFixup *Fixup) const {
+  if (!RISCVMCExpr::evaluateAsRelocatableImpl(Res, Asm, Fixup))
+    return false;
+
+  assert(Res.isAbsolute() &&
+         "The underlying sub-expr representing CFI token should be constant");
+  const uint32_t CFITok = Res.getConstant();
+
+  if (CFITok == 0 && AnchorSym && AnchorSym->isELF() &&
+      static_cast<const MCSymbolELF *>(AnchorSym)->getType() == ELF::STT_FUNC) {
+    if (!Asm)
+      // This expression cannot be evaluated without an MCAssembler
+      return false;
+    const MCSymbolRefExpr *const AnchorSymRef =
+        MCSymbolRefExpr::create(AnchorSym, Asm->getContext());
+    Res = MCValue::get(AnchorSymRef, nullptr, Res.getConstant(), getKind());
+  }
+
+  return true;
 }

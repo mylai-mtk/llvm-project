@@ -54,8 +54,10 @@ FunctionPass *llvm::createRISCVIndirectBranchTrackingPass() {
 static void emitLpad(MachineBasicBlock &MBB, const RISCVInstrInfo *TII,
                      uint32_t Label) {
   auto I = MBB.begin();
-  BuildMI(MBB, I, MBB.findDebugLoc(I), TII->get(RISCV::AUIPC), RISCV::X0)
-      .addImm(Label);
+  MachineInstr &MI =
+      *BuildMI(MBB, I, MBB.findDebugLoc(I), TII->get(RISCV::AUIPC), RISCV::X0)
+          .addImm(Label);
+  MI.getOperand(1).setTargetFlags(RISCVII::MO_LPAD_LABEL);
 }
 
 bool RISCVIndirectBranchTrackingPass::runOnMachineFunction(

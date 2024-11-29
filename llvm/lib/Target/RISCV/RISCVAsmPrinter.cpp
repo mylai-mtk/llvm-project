@@ -899,6 +899,26 @@ void RISCVAsmPrinter::emitNoteGnuProperty(const Module &M) {
   RTS.emitNoteGnuPropertySection(Feature1And);
 }
 
+static MCOperand lowerLpadLabelOperand(const MachineOperand &MO,
+                                       const AsmPrinter &AP) {
+  MCContext &Ctx = AP.OutContext;
+  const MCSymbol *LpadAnchorSym = nullptr;
+  StringRef CFITokSrc;
+  const MachineInstr *const MI = MO.getParent();
+  const MachineFunction *const MF = MI ? MI->getMF() : nullptr;
+  const bool IsFuncBegin = MF && MI == &MF->front().front();
+  if (IsFuncBegin) {
+    LpadAnchorSym = AP.CurrentFnSym;
+    if (const MDNode *const MD =
+            MF->getFunction().getMetadata("riscv_lpad_func_sig"))
+      CFITokSrc = cast<MDString>(MD->getOperand(0))->getString();
+  }
+
+  const auto *const LabelExpr =
+      RISCVLpadLabelMCExpr::create(MO.getImm(), LpadAnchorSym, CFITokSrc, Ctx);
+  return MCOperand::createExpr(LabelExpr);
+}
+
 static MCOperand lowerSymbolOperand(const MachineOperand &MO, MCSymbol *Sym,
                                     const AsmPrinter &AP) {
   MCContext &Ctx = AP.OutContext;
@@ -984,6 +1004,10 @@ bool RISCVAsmPrinter::lowerOperand(const MachineOperand &MO,
     // Regmasks are like implicit defs.
     return false;
   case MachineOperand::MO_Immediate:
+    if ((MO.getTargetFlags() & RISCVII::MO_DIRECT_FLAG_MASK) == RISCVII::MO_LPAD_LABEL) {
+      MCOp = lowerLpadLabelOperand(MO, *this);
+      break;
+    }
     MCOp = MCOperand::createImm(MO.getImm());
     break;
   case MachineOperand::MO_MachineBasicBlock:

@@ -89,6 +89,8 @@ RISCVAsmBackend::getFixupKindInfo(MCFixupKind Kind) const {
       {"fixup_riscv_tlsdesc_load_lo12", 20, 12, 0},
       {"fixup_riscv_tlsdesc_add_lo12", 20, 12, 0},
       {"fixup_riscv_tlsdesc_call", 0, 0, 0},
+
+      {"fixup_riscv_lpad", 12, 20, MCFixupKindInfo::FKF_IsTarget},
   };
   static_assert((std::size(Infos)) == RISCV::NumTargetFixupKinds,
                 "Not all fixup kinds added to Infos array");
@@ -547,6 +549,12 @@ bool RISCVAsmBackend::evaluateTargetFixup(const MCAssembler &Asm,
     if (!AUIPCExpr->evaluateAsRelocatable(AUIPCTarget, &Asm, AUIPCFixup))
       return true;
     break;
+  }
+  case RISCV::fixup_riscv_lpad: {
+    const uint32_t CFITok = Target.getConstant();
+    Value = CFITok;
+    WasForced = true;
+    return false;
   }
   }
 
