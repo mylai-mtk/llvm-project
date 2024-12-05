@@ -243,7 +243,7 @@ protected:
          uint8_t stOther, uint8_t type)
       : file(file), nameData(name.data()), nameSize(name.size()), type(type),
         binding(binding), stOther(stOther), symbolKind(k), ltoCanOmit(false),
-        archSpecificBit(false) {}
+        archSpecificBit(false), dynsymIndex(0) {}
 
   void overwrite(Symbol &sym, Kind k) const {
     if (sym.traced)
