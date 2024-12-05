@@ -327,6 +327,8 @@ RelExpr RISCV::getRelExpr(const RelType type, const Symbol &s,
   case R_RISCV_SET_ULEB128:
   case R_RISCV_SUB_ULEB128:
     return RE_RISCV_LEB128;
+  case R_RISCV_LPAD:
+    return R_RELAX_HINT;
   default:
     Err(ctx) << getErrorLoc(ctx, loc) << "unknown relocation (" << type.v
              << ") against symbol " << &s;
@@ -813,7 +815,114 @@ static void relaxHi20Lo12(Ctx &ctx, const InputSection &sec, size_t i,
   }
 }
 
-static bool relax(Ctx &ctx, InputSection &sec) {
+static ArrayRef<const Defined *> findLpadFuncSyms(
+    const InputSection &sec, const Relocation &r,
+    SmallVector<const Defined *, 1> &storage) {
+  // st_value of symbol is subject to on-the-fly update during relaxation. This
+  // value can only compare to other st_value from `Defined` in this context
+  const uint64_t relaxedSymOffset = cast<Defined>(r.sym)->value;
+  // Relocation offset is not updated during relaxation. This is in the same
+  // numeric space as the offset in `SymbolAnchors`
+  const uint64_t unrelaxedLpadOffset = r.offset;
+  // The following code assumes that symbol_offset <= lpad_offset if they're
+  // adjusted to be in the same numeric space, and we want to find function
+  // symbols that falls between the range
+
+  ArrayRef<SymbolAnchor> anchors(sec.relaxAux->anchors);
+  const auto begin = std::partition_point(anchors.begin(), anchors.end(),
+      [=](const SymbolAnchor &sa) {
+        return sa.d->value < relaxedSymOffset;
+      });
+  for (auto it = begin, end = anchors.end();
+       it != end && it->offset <= unrelaxedLpadOffset;
+       it++)
+    if (!it->end && it->d->isFunc())
+      storage.push_back(it->d);
+  assert(!storage.empty() && "At least 1 symbol (`r.sym`) should be found");
+  return storage;
+}
+
+static bool funcIsExported(Ctx &ctx, const Defined &funcSym) {
+  if (funcSym.isLocal())
+    return false;
+
+  if ((funcSym.isUsedInRegularObj && includeInSymtab(ctx, funcSym)) ||
+      funcSym.includeInDynsym(ctx))
+    return true;
+
+  for (const Partition &part : ArrayRef<Partition>(ctx.partitions).slice(1))
+    for (const DynamicReloc &r : part.relaDyn->relocs)
+      if (r.sym == static_cast<const Symbol *>(&funcSym) &&
+          r.needsDynSymIndex())
+        return true;
+
+  return false;
+}
+
+static bool funcIsReferencedByNonCalls(Ctx &ctx, const Defined &funcSym) {
+  for (const InputSectionBase *const isec : ctx.inputSections)
+    if (isec->flags & (SHF_EXECINSTR | SHF_ALLOC))
+      for (const Relocation &r : isec->relocs())
+        if (r.sym == static_cast<const Symbol *>(&funcSym) &&
+            r.type != R_RISCV_CALL && r.type != R_RISCV_CALL_PLT)
+          return true;
+
+  return false;
+}
+
+static bool tryRemoveLpad(Ctx &ctx, const InputSection &sec, const size_t i,
+                          const Relocation &r, uint32_t &remove) {
+  if (!r.sym->isDefined())
+    // An LPAD relocation could optionally refer to a symbol which the lpad is
+    // for entering. Only these lpads are subject to removal
+    return false;
+
+  SmallVector<const Defined *, 1> funcSymsStorage;
+  for (const Defined *const funcSym :
+      findLpadFuncSyms(sec, r, funcSymsStorage)) {
+    const bool canRemoveLpad = !funcIsExported(ctx, *funcSym) &&
+                               !funcIsReferencedByNonCalls(ctx, *funcSym);
+    if (!canRemoveLpad)
+      return false;
+  }
+
+  const bool hasRelaxHint =
+      i + 1 != sec.relocs().size() && sec.relocs()[i + 1].type == R_RISCV_RELAX;
+  if (hasRelaxHint)
+    remove = 4;
+  else {
+    sec.relaxAux->relocTypes[i] = R_RISCV_LPAD;
+    sec.relaxAux->writes.push_back(0x00000013); // nop
+  }
+
+  return true;
+}
+
+static void relaxLpad(Ctx &ctx, const InputSection &sec, const size_t i,
+                      const Relocation &r, uint32_t &remove,
+                      const unsigned int pass) {
+  const bool lpadRemoved = tryRemoveLpad(ctx, sec, i, r, remove);
+  if (lpadRemoved)
+    return;
+  remove = 0;
+
+  if (ctx.arg.zForceZicfilp == ForceZicfilpPolicy::Unlabeled) {
+    sec.relaxAux->relocTypes[i] = R_RISCV_LPAD;
+    sec.relaxAux->writes.push_back(0x00000017); // lpad 0
+  } else if ((ctx.arg.andFeatures & GNU_PROPERTY_RISCV_FEATURE_1_CFI_LP_FUNC_SIG) &&
+             r.addend == 0 && r.sym && r.sym->isDefined() && r.sym->isFunc()) {
+    const uint32_t newLpadVal =
+        getRISCVLpadValue(ctx, *r.sym, DiagLevel::None);
+    if (newLpadVal) {
+      sec.relaxAux->relocTypes[i] = R_RISCV_LPAD;
+      sec.relaxAux->writes.push_back((newLpadVal << 12) | 0x00000017); // lpad
+    } else if (pass == 0) // Only warn once
+      Warn(ctx) << "cannot tighten RISCV lpad value for symbol: "
+                << r.sym->getName();
+  }
+}
+
+static bool relax(Ctx &ctx, InputSection &sec, const unsigned int pass) {
   const uint64_t secAddr = sec.getVA();
   const MutableArrayRef<Relocation> relocs = sec.relocs();
   auto &aux = *sec.relaxAux;
@@ -878,6 +987,9 @@ static bool relax(Ctx &ctx, InputSection &sec) {
       if (toLeShortForm)
         remove = 4;
       break;
+    case R_RISCV_LPAD:
+      relaxLpad(ctx, sec, i, r, remove, pass);
+      break;
     }
 
     // For all anchors whose offsets are <= r.offset, they are preceded by
@@ -930,7 +1042,7 @@ bool RISCV::relaxOnce(int pass) const {
     if (!(osec->flags & SHF_EXECINSTR))
       continue;
     for (InputSection *sec : getInputSections(*osec, storage))
-      changed |= relax(ctx, *sec);
+      changed |= relax(ctx, *sec, pass);
   }
   return changed;
 }
@@ -1010,6 +1122,11 @@ void RISCV::finalizeRelax(int passes) const {
             // in relocateAlloc.
             skip = 4;
             write32le(p, aux.writes[writesIdx++]);
+            aux.relocTypes[i] = R_RISCV_NONE;
+            break;
+          case R_RISCV_LPAD:
+            skip = 4;
+            write32le(p, aux.writes[writesIdx++]); // nop or lpad
             aux.relocTypes[i] = R_RISCV_NONE;
             break;
           default:
