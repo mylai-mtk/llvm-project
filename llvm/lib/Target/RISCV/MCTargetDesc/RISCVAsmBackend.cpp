@@ -552,6 +552,8 @@ bool RISCVAsmBackend::evaluateTargetFixup(const MCAssembler &Asm,
   }
   case RISCV::fixup_riscv_lpad: {
     const uint32_t CFITok = Target.getConstant();
+    if (const MCSymbolRefExpr *const AnchorSymRef = Target.getSymA())
+      LpadInfos.try_emplace(&AnchorSymRef->getSymbol(), CFITok);
     Value = CFITok;
     WasForced = true;
     return false;
@@ -712,6 +714,75 @@ bool RISCVAsmBackend::shouldInsertFixupForCodeAlign(MCAssembler &Asm,
   Asm.getWriter().recordRelocation(Asm, &AF, Fixup, NopBytes, FixedValue);
 
   return true;
+}
+
+std::optional<StringRef>
+RISCVAsmBackend::getSectionContentAfterSymbolTableIsFinalized(
+    MCSection &Sec, const MCAssembler &Asm) {
+  if (Sec.getName() == ".riscv.lpadinfo")
+    return getLpadinfoSectionContent(Asm);
+  return MCAsmBackend::getSectionContentAfterSymbolTableIsFinalized(Sec, Asm);
+}
+
+std::optional<StringRef>
+RISCVAsmBackend::getLpadinfoSectionContent(const MCAssembler &Asm) {
+  if (LpadInfos.empty())
+    return "";
+
+  using SymLocT = std::pair<uint16_t, uint64_t>; // <st_shndx, st_value>
+
+  DenseMap<SymLocT, uint32_t> LocToLpadVals;
+  for (const auto &[Sym, LpadVal] : LpadInfos) {
+    const MCSymbolELF &AnchorSym = static_cast<const MCSymbolELF &>(*Sym);
+    if (!AnchorSym.isFinalizedInSymTab())
+      continue;
+
+    const uint16_t AnchorSymSec = AnchorSym.getStShndx();
+    if (AnchorSymSec == ELF::SHN_UNDEF)
+      continue;
+
+    const SymLocT AnchorLoc{AnchorSymSec, AnchorSym.getStValue()};
+
+    [[maybe_unused]] const auto [It, New] =
+        LocToLpadVals.try_emplace(AnchorLoc, LpadVal);
+    assert((New || It->second == LpadVal) &&
+           "Found conflicting lpad values at AnchorLoc");
+  }
+
+  raw_string_ostream OS(LpadInfoSecContent);
+  support::endian::Writer W(OS, Endian);
+  for (const MCSymbol &S : Asm.symbols()) {
+    const auto &Symbol = cast<MCSymbolELF>(S);
+    if (!Symbol.isFinalizedInSymTab())
+      continue;
+
+    const unsigned char StInfo = Symbol.getStInfo();
+    const unsigned char StType = StInfo & 0xf;
+    const unsigned char StBind = StInfo >> 4;
+    if (StBind == ELF::STB_LOCAL)
+      continue;
+
+    uint32_t LpiValue;
+    const bool IsDefinedFunc =
+        StType == ELF::STT_FUNC &&
+        (StBind == ELF::STB_GLOBAL || StBind == ELF::STB_WEAK);
+    if (IsDefinedFunc) {
+      const SymLocT SymLoc{Symbol.getStShndx(), Symbol.getStValue()};
+      // Use `at` to lookup lpad value since every defined func **must** have an
+      // lpadinfo entry
+      LpiValue = LocToLpadVals.at(SymLoc);
+    } else if (const auto It = LpadInfos.find(&S); It != LpadInfos.end()) {
+      // Fallback to use symbol address to lookup lpad value. Undefined weak
+      // functions take this path
+      LpiValue = It->second;
+    } else
+      continue;
+
+    W.write<uint32_t>(Symbol.getIndex()); // lpi_sym
+    W.write<uint32_t>(LpiValue);          // lpi_value
+  }
+
+  return LpadInfoSecContent;
 }
 
 std::unique_ptr<MCObjectTargetWriter>

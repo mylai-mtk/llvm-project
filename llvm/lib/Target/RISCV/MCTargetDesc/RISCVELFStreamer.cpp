@@ -21,6 +21,7 @@
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCELFObjectWriter.h"
 #include "llvm/MC/MCSubtargetInfo.h"
+#include <string>
 
 using namespace llvm;
 
@@ -108,6 +109,26 @@ void RISCVTargetELFStreamer::emitNoteGnuPropertySection(
   OutStreamer.switchSection(Cur);
 }
 
+void RISCVTargetELFStreamer::emitLpadInfoSectionHeader() {
+  MCStreamer &Streamer = getStreamer();
+  MCContext &Ctx = Streamer.getContext();
+  Streamer.pushSection();
+  MCSectionELF *const Sec =
+      Ctx.getELFSection(".riscv.lpadinfo", ELF::SHT_RISCV_LPADINFO, 0);
+  Sec->setIsHeaderPlaceholderAtWriteOut();
+  Streamer.switchSection(Sec);
+  Streamer.popSection();
+}
+
+void RISCVTargetELFStreamer::recordLpadInfo(const MCSymbol &AnchorSym,
+                                            const uint32_t LpadVal) {
+  auto &RAB =
+      static_cast<RISCVAsmBackend &>(getStreamer().getAssembler().getBackend());
+  [[maybe_unused]] const auto [It, New] =
+      RAB.LpadInfos.try_emplace(&AnchorSym, LpadVal);
+  assert((New || It->second == LpadVal) && "Found conflicting lpad values");
+}
+
 void RISCVTargetELFStreamer::finish() {
   RISCVTargetStreamer::finish();
   ELFObjectWriter &W = getStreamer().getWriter();
@@ -141,6 +162,9 @@ void RISCVTargetELFStreamer::finish() {
   }
 
   W.setELFHeaderEFlags(EFlags);
+
+  if (NeedLpadInfoSection)
+    emitLpadInfoSectionHeader();
 }
 
 void RISCVTargetELFStreamer::reset() {
@@ -173,11 +197,12 @@ void RISCVELFStreamer::emitInstructionsMappingSymbol() {
   LastEMS = EMS_Instructions;
 }
 
-void RISCVELFStreamer::emitMappingSymbol(StringRef Name) {
+MCSymbol *RISCVELFStreamer::emitMappingSymbol(StringRef Name) {
   auto *Symbol = cast<MCSymbolELF>(getContext().createLocalSymbol(Name));
   emitLabel(Symbol);
   Symbol->setType(ELF::STT_NOTYPE);
   Symbol->setBinding(ELF::STB_LOCAL);
+  return Symbol;
 }
 
 void RISCVELFStreamer::changeSection(MCSection *Section, uint32_t Subsection) {
@@ -211,6 +236,13 @@ void RISCVELFStreamer::emitValueImpl(const MCExpr *Value, unsigned Size,
                                      SMLoc Loc) {
   emitDataMappingSymbol();
   MCELFStreamer::emitValueImpl(Value, Size, Loc);
+}
+
+MCSymbol *RISCVELFStreamer::emitLpadMappingSymbol(const StringRef Label) {
+  std::string SymName("$s");
+  SymName.reserve(2 + Label.size());
+  SymName.insert(SymName.end(), Label.begin(), Label.end());
+  return emitMappingSymbol(SymName);
 }
 
 namespace llvm {
