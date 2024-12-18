@@ -50,6 +50,7 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <list>
 #include <memory>
 #include <string>
 #include <utility>
@@ -1026,6 +1027,28 @@ uint64_t ELFWriter::writeObject(MCAssembler &Asm) {
 
   stats::ELFHeaderBytes += W.OS.tell() - StartOffset;
 
+  std::list<MCSectionELF *> ContentPendingSections;
+  auto SectionContentResolver = [&](const auto &SecContentGetter) {
+    for (auto It = ContentPendingSections.begin(),
+              End = ContentPendingSections.end();
+         It != End;) {
+      MCSectionELF &Section = **It;
+      const std::optional<StringRef> SecContent = SecContentGetter(Section);
+      if (!SecContent.has_value()) {
+        ++It;
+        continue;
+      }
+
+      const uint64_t SecStart = align(Section.getAlign());
+      W.OS << *SecContent;
+      const uint64_t SecEnd = W.OS.tell();
+      Section.setOffsets(SecStart, SecEnd);
+
+      const auto EraseIt = It++;
+      ContentPendingSections.erase(EraseIt);
+    }
+  };
+
   // ... then the sections ...
   SmallVector<std::pair<MCSectionELF *, SmallVector<unsigned>>, 0> Groups;
   // Map from group section index to group
@@ -1038,17 +1061,19 @@ uint64_t ELFWriter::writeObject(MCAssembler &Asm) {
     if (Mode == DwoOnly && !isDwoSection(Section))
       continue;
 
-    // Remember the offset into the file for this section.
-    const uint64_t SecStart = align(Section.getAlign());
-
-    const MCSymbolELF *SignatureSymbol = Section.getGroup();
-    writeSectionData(Asm, Section);
-
-    uint64_t SecEnd = W.OS.tell();
-    Section.setOffsets(SecStart, SecEnd);
+    if (Section.isHeaderPlaceholderAtWriteOut())
+      ContentPendingSections.push_back(&Section);
+    else {
+      // Remember the offset into the file for this section.
+      const uint64_t SecStart = align(Section.getAlign());
+      writeSectionData(Asm, Section);
+      const uint64_t SecEnd = W.OS.tell();
+      Section.setOffsets(SecStart, SecEnd);
+    }
 
     MCSectionELF *RelSection = createRelocationSection(Ctx, Section);
 
+    const MCSymbolELF *const SignatureSymbol = Section.getGroup();
     unsigned *GroupIdxEntry = nullptr;
     if (SignatureSymbol) {
       GroupIdxEntry = &RevGroupMap[SignatureSymbol];
@@ -1104,6 +1129,11 @@ uint64_t ELFWriter::writeObject(MCAssembler &Asm) {
     // Compute symbol table information.
     computeSymbolTable(Asm, RevGroupMap);
 
+    SectionContentResolver([&](MCSectionELF &Sec) {
+      return Asm.getBackend().getSectionContentAfterSymbolTableIsFinalized(Sec,
+                                                                           Asm);
+    });
+
     for (MCSectionELF *RelSection : Relocations) {
       // Remember the offset into the file for this section.
       const uint64_t SecStart = align(RelSection->getAlign());
@@ -1132,6 +1162,9 @@ uint64_t ELFWriter::writeObject(MCAssembler &Asm) {
   const uint64_t SectionHeaderOffset = align(is64Bit() ? Align(8) : Align(4));
 
   // ... then the section header table ...
+  assert(ContentPendingSections.empty() &&
+         "All section contents should be known now, since we need to know the "
+         "sizes of sections to write the section header");
   writeSectionHeaders(Asm);
 
   uint16_t NumSections = support::endian::byte_swap<uint16_t>(

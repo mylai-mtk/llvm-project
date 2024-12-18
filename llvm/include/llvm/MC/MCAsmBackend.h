@@ -10,10 +10,12 @@
 #define LLVM_MC_MCASMBACKEND_H
 
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/StringRef.h"
 #include "llvm/MC/MCDirectives.h"
 #include "llvm/MC/MCFixup.h"
 #include "llvm/Support/Endian.h"
 #include <cstdint>
+#include <optional>
 
 namespace llvm {
 
@@ -23,6 +25,7 @@ class MCDwarfLineAddrFragment;
 class MCFragment;
 class MCLEBFragment;
 class MCRelaxableFragment;
+class MCSection;
 class MCSymbol;
 class MCAssembler;
 class MCContext;
@@ -35,7 +38,6 @@ class MCObjectWriter;
 class MCSubtargetInfo;
 class MCValue;
 class raw_pwrite_stream;
-class StringRef;
 class raw_ostream;
 
 /// Generic interface to target specific assembler backends.
@@ -234,6 +236,14 @@ public:
   /// Check whether a given symbol has been flagged with MICROMIPS flag.
   virtual bool isMicroMips(const MCSymbol *Sym) const {
     return false;
+  }
+
+  /// Get section content that can only be obtained after symbol table is
+  /// finalized
+  virtual std::optional<StringRef>
+  getSectionContentAfterSymbolTableIsFinalized(MCSection &Sec,
+                                               const MCAssembler &Asm) {
+    return std::nullopt;
   }
 
   bool isDarwinCanonicalPersonality(const MCSymbol *Sym) const;
