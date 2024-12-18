@@ -461,6 +461,8 @@ void ELFWriter::writeSymbol(const MCAssembler &Asm, SymbolTableWriter &Writer,
   // Write out the symbol table entry
   Writer.writeSymbol(StringIndex, Info, Value, Size, Other, MSD.SectionIndex,
                      IsReserved);
+  Symbol.setFinalSymTabFields(StringIndex, Info, Other, MSD.SectionIndex, Value,
+                              Size);
 }
 
 bool ELFWriter::isInSymtab(const MCAssembler &Asm, const MCSymbolELF &Symbol,
