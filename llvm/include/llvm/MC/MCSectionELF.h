@@ -50,6 +50,10 @@ class MCSectionELF final : public MCSection {
   uint64_t StartOffset;
   uint64_t EndOffset;
 
+  /// Tell ELFWriter this section is used for adding a header entry to the
+  /// section table and it's content should be obtained by other method
+  bool IsHeaderPlaceholderAtWriteOut = false;
+
 private:
   friend class MCContext;
 
@@ -104,6 +108,13 @@ public:
   }
   std::pair<uint64_t, uint64_t> getOffsets() const {
     return std::make_pair(StartOffset, EndOffset);
+  }
+
+  bool isHeaderPlaceholderAtWriteOut() const {
+    return IsHeaderPlaceholderAtWriteOut;
+  }
+  void setIsHeaderPlaceholderAtWriteOut(const bool Is = true) {
+    IsHeaderPlaceholderAtWriteOut = Is;
   }
 
   static bool classof(const MCSection *S) {
