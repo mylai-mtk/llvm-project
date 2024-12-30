@@ -1578,3 +1578,7 @@ void elf::setRISCVTargetInfo(Ctx &ctx) {
 void elf::readRISCVLpadinfo(Ctx &ctx) {
   static_cast<RISCV *>(ctx.target.get())->readLpadinfoSec();
 }
+
+uint32_t elf::getRISCVLpadValue(Ctx &ctx, const Symbol &sym) {
+  return static_cast<RISCV *>(ctx.target.get())->getLpadVal(sym);
+}
