@@ -2043,6 +2043,7 @@ template <class ELFT> void Writer<ELFT>::finalizeSections() {
       finalizeSynthetic(ctx, part.verSym.get());
       finalizeSynthetic(ctx, part.verNeed.get());
       finalizeSynthetic(ctx, part.dynamic.get());
+      finalizeSynthetic(ctx, part.riscvLpadinfo.get());
     }
   }
 
@@ -2084,6 +2085,7 @@ template <class ELFT> void Writer<ELFT>::finalizeSections() {
     finalizeSynthetic(ctx, ctx.in.debugNames.get());
     finalizeSynthetic(ctx, ctx.in.ppc64LongBranchTarget.get());
     finalizeSynthetic(ctx, ctx.in.armCmseSGSection.get());
+    finalizeSynthetic(ctx, ctx.in.riscvLpadinfo.get());
   }
 
   // Relaxation to delete inter-basic block jumps created by basic block

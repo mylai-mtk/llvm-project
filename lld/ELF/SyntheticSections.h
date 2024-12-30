@@ -1368,6 +1368,26 @@ private:
   bool finalized = false;
 };
 
+class RISCVLpadinfoSection final : public SyntheticSection {
+public:
+  RISCVLpadinfoSection(Ctx &ctx, const SymbolTableBaseSection &symTab);
+
+  size_t getSize() const override;
+  bool isNeeded() const override;
+  void finalizeContents() override;
+  void writeTo(uint8_t *buf) override;
+
+private:
+  bool isSymTabFinalized() const;
+  static bool isNeedLpadinfoEntry(const Symbol &sym);
+
+  template <class ELFT>
+  static void writeLpadinfoEntry(uint8_t *const buf, const size_t symIdx,
+                                 const uint32_t lpadVal);
+
+  const SymbolTableBaseSection &symTab;
+};
+
 template <typename ELFT>
 class PartitionElfHeaderSection final : public SyntheticSection {
 public:
@@ -1490,6 +1510,7 @@ struct Partition {
   std::unique_ptr<SyntheticSection> programHeaders;
   SmallVector<std::unique_ptr<PhdrEntry>, 0> phdrs;
 
+  std::unique_ptr<RISCVLpadinfoSection> riscvLpadinfo;
   std::unique_ptr<ARMExidxSyntheticSection> armExidx;
   std::unique_ptr<BuildIdSection> buildId;
   std::unique_ptr<SyntheticSection> dynamic;

@@ -4647,6 +4647,107 @@ size_t MemtagGlobalDescriptors::getSize() const {
   return createMemtagGlobalDescriptors(ctx, symbols);
 }
 
+RISCVLpadinfoSection::RISCVLpadinfoSection(
+    Ctx &ctx, const SymbolTableBaseSection &symTab) :
+  SyntheticSection(ctx, ".riscv.lpadinfo", SHT_RISCV_LPADINFO, 0, 1),
+  symTab(symTab) {
+  switch (ctx.arg.ekind) {
+  case lld::elf::ELF32LEKind:
+    entsize = sizeof(Elf_Riscv_LpadInfo<llvm::object::ELF32LE>);
+    break;
+  case lld::elf::ELF32BEKind:
+    entsize = sizeof(Elf_Riscv_LpadInfo<llvm::object::ELF32BE>);
+    break;
+  case lld::elf::ELF64LEKind:
+    entsize = sizeof(Elf_Riscv_LpadInfo<llvm::object::ELF64LE>);
+    break;
+  case lld::elf::ELF64BEKind:
+    entsize = sizeof(Elf_Riscv_LpadInfo<llvm::object::ELF64BE>);
+    break;
+  default:
+    llvm_unreachable("unknown ctx.arg.ekind");
+  }
+}
+
+bool RISCVLpadinfoSection::isSymTabFinalized() const {
+  if (const OutputSection *const osec = symTab.getParent())
+    return osec->info;
+  // if symTab is not in output, it's dropped and considered "finalized"
+  return true;
+}
+
+bool RISCVLpadinfoSection::isNeedLpadinfoEntry(const Symbol &sym) {
+  return !sym.isUndefined() && sym.isFunc() && (sym.isGlobal() || sym.isWeak());
+}
+
+size_t RISCVLpadinfoSection::getSize() const {
+  size_t numLocals;
+  if (const OutputSection *const osec = symTab.getParent();
+      osec && isSymTabFinalized())
+    numLocals = osec->info - 1;
+  else
+    numLocals = 0;
+
+  size_t size = 0;
+  for (const SymbolTableEntry &ste : symTab.getSymbols().slice(numLocals)) {
+    if (isNeedLpadinfoEntry(*ste.sym))
+      size += entsize;
+  }
+  return size;
+}
+
+bool RISCVLpadinfoSection::isNeeded() const {
+  if (!(ctx.arg.andFeatures & GNU_PROPERTY_RISCV_FEATURE_1_CFI_LP_FUNC_SIG))
+    return false;
+  if (!(symTab.getParent() && symTab.isNeeded()))
+    return false;
+  if (!isSymTabFinalized())
+    return true;
+
+  if (const OutputSection *const osec = symTab.getParent()) {
+    const size_t numLocals = osec->info - 1;
+    for (const SymbolTableEntry &ste : symTab.getSymbols().slice(numLocals))
+      if (isNeedLpadinfoEntry(*ste.sym))
+        return true;
+  }
+  return false;
+}
+
+void RISCVLpadinfoSection::finalizeContents() {
+  assert(isSymTabFinalized() &&
+      ".riscv.lpadinfo section should be finalized after symbol tables are "
+      "finalized");
+  size = getSize();
+
+  const OutputSection *const symTabOsec = symTab.getParent();
+  assert(symTabOsec && "Corresponding symbol table should not be dropped");
+  link = symTabOsec->sectionIndex;
+}
+
+template <class ELFT>
+void RISCVLpadinfoSection::writeLpadinfoEntry(
+    uint8_t *const buf, const size_t symIdx, const uint32_t lpadVal) {
+  auto *const eLpi = reinterpret_cast<Elf_Riscv_LpadInfo<ELFT> *>(buf);
+  eLpi->lpi_sym = symIdx;
+  eLpi->lpi_value = lpadVal;
+}
+
+void RISCVLpadinfoSection::writeTo(uint8_t *buf) {
+  const OutputSection *const symTabOsec = symTab.getParent();
+  assert(symTabOsec && "Corresponding symbol table should not be dropped");
+  const size_t firstGlobal = symTabOsec->info;
+  const ArrayRef<SymbolTableEntry> syms = symTab.getSymbols();
+  for (size_t i = firstGlobal, end = symTab.getNumSymbols(); i != end; ++i) {
+    const Symbol &sym = *syms[i - 1].sym;
+    if (!isNeedLpadinfoEntry(sym))
+      continue;
+
+    const uint32_t lpadVal = getRISCVLpadValue(ctx, sym);
+    invokeELFT(writeLpadinfoEntry, buf, i, lpadVal);
+    buf += entsize;
+  }
+}
+
 static OutputSection *findSection(Ctx &ctx, StringRef name) {
   for (SectionCommand *cmd : ctx.script->sectionCommands)
     if (auto *osd = dyn_cast<OutputDesc>(cmd))
@@ -4800,6 +4901,13 @@ template <class ELFT> void elf::createSyntheticSections(Ctx &ctx) {
 
       add(*part.dynamic);
       add(*part.dynStrTab);
+
+      if (ctx.arg.emachine == EM_RISCV &&
+          ((ctx.arg.andFeatures & GNU_PROPERTY_RISCV_FEATURE_1_CFI_LP_FUNC_SIG))) {
+        part.riscvLpadinfo =
+            std::make_unique<RISCVLpadinfoSection>(ctx, *part.dynSymTab);
+        add(*part.riscvLpadinfo);
+      }
     }
     add(*part.relaDyn);
 
@@ -4948,6 +5056,14 @@ template <class ELFT> void elf::createSyntheticSections(Ctx &ctx) {
     add(*ctx.in.shStrTab);
   if (ctx.in.strTab)
     add(*ctx.in.strTab);
+
+  if (ctx.arg.emachine == EM_RISCV &&
+      (ctx.arg.andFeatures & GNU_PROPERTY_RISCV_FEATURE_1_CFI_LP_FUNC_SIG) &&
+      ctx.in.symTab && !ctx.arg.hasDynSymTab) {
+    ctx.in.riscvLpadinfo =
+        std::make_unique<RISCVLpadinfoSection>(ctx, *ctx.in.symTab);
+    add(*ctx.in.riscvLpadinfo);
+  }
 }
 
 template void elf::splitSections<ELF32LE>(Ctx &);

@@ -245,6 +245,8 @@ uint64_t getLoongArchPageDelta(uint64_t dest, uint64_t pc, RelType type);
 void riscvFinalizeRelax(int passes);
 void mergeRISCVAttributesSections(Ctx &);
 void readRISCVLpadinfo(Ctx &);
+uint32_t getRISCVLpadValue(Ctx &, const Symbol &,
+                           const DiagLevel diagLvOnNotFound = DiagLevel::Err);
 void addArmInputSectionMappingSymbols(Ctx &);
 void addArmSyntheticSectionMappingSymbol(Defined *);
 void sortArmMappingSymbols(Ctx &);
