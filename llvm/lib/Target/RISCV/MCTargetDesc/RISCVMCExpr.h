@@ -104,6 +104,8 @@ class RISCVLpadHashMCExpr : public RISCVMCExpr {
 public:
   StringRef getCFITokSrc() const { return CFITokSrc; }
 
+  void printImpl(raw_ostream &OS, const MCAsmInfo *MAI) const override;
+
   static const RISCVLpadHashMCExpr *
   create(const uint32_t CFITok, const StringRef CFITokSrc, MCContext &Ctx);
 

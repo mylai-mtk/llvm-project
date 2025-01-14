@@ -11,6 +11,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "MCTargetDesc/RISCVBaseInfo.h"
+#include "MCTargetDesc/RISCVMCExpr.h"
 #include "MCTargetDesc/RISCVMCTargetDesc.h"
 #include "TargetInfo/RISCVTargetInfo.h"
 #include "llvm/MC/MCContext.h"
@@ -22,6 +23,7 @@
 #include "llvm/MC/MCSubtargetInfo.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Support/Endian.h"
+#include "llvm/Support/RISCVISAUtils.h"
 
 using namespace llvm;
 
@@ -41,6 +43,8 @@ public:
   DecodeStatus getInstruction(MCInst &Instr, uint64_t &Size,
                               ArrayRef<uint8_t> Bytes, uint64_t Address,
                               raw_ostream &CStream) const override;
+  void onMappingSymbols(const uint64_t Address,
+                        const ArrayRef<SymbolInfoTy> MSyms) override;
 
 private:
   void addSPOperands(MCInst &MI) const;
@@ -55,6 +59,13 @@ private:
   DecodeStatus getInstruction16(MCInst &Instr, uint64_t &Size,
                                 ArrayRef<uint8_t> Bytes, uint64_t Address,
                                 raw_ostream &CStream) const;
+  void tweakDecodedInstruction(MCInst &Instr, const uint64_t Address,
+                               raw_ostream &CStream) const;
+
+  struct {
+    uint64_t Address;
+    StringRef Label;
+  } LpadHashLabel;
 };
 } // end anonymous namespace
 
@@ -721,7 +732,9 @@ DecodeStatus RISCVDisassembler::getInstruction32(MCInst &MI, uint64_t &Size,
                         "Qualcomm uC Conditional Move custom opcode table");
   TRY_TO_DECODE_FEATURE(RISCV::FeatureVendorXqciint, DecoderTableXqciint32,
                         "Qualcomm uC Interrupts custom opcode table");
-  TRY_TO_DECODE(true, DecoderTable32, "RISCV32 table");
+  TRY_TO_DECODE_WITH_ADDITIONAL_OPERATION(
+      true, DecoderTable32, "RISCV32 table",
+      tweakDecodedInstruction(MI, Address, CS));
 
   return MCDisassembler::Fail;
 }
@@ -829,4 +842,55 @@ DecodeStatus RISCVDisassembler::getInstruction(MCInst &MI, uint64_t &Size,
   // Remaining encodings are reserved for > 176-bit instructions.
   Size = 0;
   return MCDisassembler::Fail;
+}
+
+void RISCVDisassembler::onMappingSymbols(const uint64_t Address,
+                                         const ArrayRef<SymbolInfoTy> MSyms) {
+  LpadHashLabel.Address = 0;
+  for (const SymbolInfoTy &S : MSyms) {
+    assert(S.Name.size() >= 2 && S.Name[0] == '$' &&
+           "Unexpected mapping symbol name format");
+    const char Kind = S.Name[1];
+    if (Kind == 's') {
+      const StringRef Label = S.Name.drop_front(2);
+      assert((LpadHashLabel.Address == 0 || LpadHashLabel.Label == Label) &&
+             "Found conflicting lpad mapping symbols");
+      LpadHashLabel.Address = Address;
+      LpadHashLabel.Label = Label;
+    }
+  }
+}
+
+void RISCVDisassembler::tweakDecodedInstruction(MCInst &MI,
+                                                const uint64_t Address,
+                                                raw_ostream &CS) const {
+  const bool IsLpad =
+      MI.getOpcode() == RISCV::AUIPC && MI.getOperand(0).getReg() == RISCV::X0;
+  const bool IsLUISetupLpad =
+      MI.getOpcode() == RISCV::LUI && MI.getOperand(0).getReg() == RISCV::X7;
+  if (IsLpad || IsLUISetupLpad) {
+    const int64_t LpadVal = MI.getOperand(1).getImm();
+    const bool IsHashedOperand =
+        LpadHashLabel.Address == Address &&
+        RISCVISAUtils::zicfilpFuncSigHash(LpadHashLabel.Label) == LpadVal;
+
+    MCContext &Ctx = getContext();
+    const RISCVMCExpr *LpadExpr;
+    if (IsHashedOperand) {
+      LpadExpr = RISCVLpadHashMCExpr::create(LpadVal, LpadHashLabel.Label, Ctx);
+    } else if (IsLpad) {
+      // Still wrap the label operand of LPAD insn in RISCVMCExpr, since this is
+      // what other parts of the system expect for an LPAD insn
+      LpadExpr = RISCVMCExpr::create(MCConstantExpr::create(LpadVal, Ctx),
+                                     RISCVMCExpr::VK_RISCV_LPAD_LABEL, Ctx);
+    } else {
+      LpadExpr = nullptr;
+    }
+
+    if (LpadExpr) {
+      MI.getOperand(1) = MCOperand::createExpr(LpadExpr);
+      if (IsHashedOperand)
+        CS << "LpadValue = " << LpadVal << '\n';
+    }
+  }
 }

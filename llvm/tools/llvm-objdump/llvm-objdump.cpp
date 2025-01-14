@@ -634,8 +634,14 @@ static bool isCSKYElf(const ObjectFile &Obj) {
   return Elf && Elf->getEMachine() == ELF::EM_CSKY;
 }
 
+static bool isRISCVElf(const ObjectFile &Obj) {
+  const auto *Elf = dyn_cast<ELFObjectFileBase>(&Obj);
+  return Elf && Elf->getEMachine() == ELF::EM_RISCV;
+}
+
 static bool hasMappingSymbols(const ObjectFile &Obj) {
-  return isArmElf(Obj) || isAArch64Elf(Obj) || isCSKYElf(Obj) ;
+  return isArmElf(Obj) || isAArch64Elf(Obj) || isCSKYElf(Obj) ||
+         isRISCVElf(Obj);
 }
 
 static void printRelocation(formatted_raw_ostream &OS, StringRef FileName,
@@ -1324,25 +1330,11 @@ static bool shouldAdjustVA(const SectionRef &Section) {
   return false;
 }
 
-
-typedef std::pair<uint64_t, char> MappingSymbolPair;
-static char getMappingSymbolKind(ArrayRef<MappingSymbolPair> MappingSymbols,
-                                 uint64_t Address) {
-  auto It =
-      partition_point(MappingSymbols, [Address](const MappingSymbolPair &Val) {
-        return Val.first <= Address;
-      });
-  // Return zero for any address before the first mapping symbol; this means
-  // we should use the default disassembly mode, depending on the target.
-  if (It == MappingSymbols.begin())
-    return '\x00';
-  return (It - 1)->second;
-}
+typedef std::pair<uint64_t, StringRef> MappingSymbolPair;
 
 static uint64_t dumpARMELFData(uint64_t SectionAddr, uint64_t Index,
                                uint64_t End, const ObjectFile &Obj,
                                ArrayRef<uint8_t> Bytes,
-                               ArrayRef<MappingSymbolPair> MappingSymbols,
                                const MCSubtargetInfo &STI, raw_ostream &OS) {
   llvm::endianness Endian =
       Obj.isLittleEndian() ? llvm::endianness::little : llvm::endianness::big;
@@ -1663,9 +1655,11 @@ disassembleObject(ObjectFile &Obj, const ObjectFile &DbgObj,
   DisassemblerTarget *DT = &PrimaryTarget;
   bool PrimaryIsThumb = false;
   SmallVector<std::pair<uint64_t, uint64_t>, 0> CHPECodeMap;
+  const bool IsArmElf = isArmElf(Obj), IsAArch64Elf = isAArch64Elf(Obj),
+             HasMappingSymbols = hasMappingSymbols(Obj);
 
   if (SecondaryTarget) {
-    if (isArmElf(Obj)) {
+    if (IsArmElf) {
       PrimaryIsThumb =
           PrimaryTarget.SubtargetInfo->checkFeatures("+thumb-mode");
     } else if (const auto *COFFObj = dyn_cast<COFFObjectFile>(&Obj)) {
@@ -1696,7 +1690,6 @@ disassembleObject(ObjectFile &Obj, const ObjectFile &DbgObj,
   // Create a mapping from virtual address to symbol name.  This is used to
   // pretty print the symbols while disassembling.
   std::map<SectionRef, SectionSymbolsTy> AllSymbols;
-  std::map<SectionRef, SmallVector<MappingSymbolPair, 0>> AllMappingSymbols;
   SectionSymbolsTy AbsoluteSymbols;
   const StringRef FileName = Obj.getFileName();
   const MachOObjectFile *MachO = dyn_cast<const MachOObjectFile>(&Obj);
@@ -1715,23 +1708,17 @@ disassembleObject(ObjectFile &Obj, const ObjectFile &DbgObj,
       // STT_SECTION, or a mapping symbol). Ignore STT_SECTION symbols. We will
       // synthesize a section symbol if no symbol is defined at offset 0.
       //
-      // For a mapping symbol, store it within both AllSymbols and
-      // AllMappingSymbols. If --show-all-symbols is unspecified, its label will
-      // not be printed in disassembly listing.
+      // For a mapping symbol, still store it within AllSymbols. If
+      // --show-all-symbols is unspecified, its label will not be printed in
+      // disassembly listing.
       if (getElfSymbolType(Obj, Symbol) != ELF::STT_SECTION &&
-          hasMappingSymbols(Obj)) {
+          HasMappingSymbols) {
         section_iterator SecI = unwrapOrError(Symbol.getSection(), FileName);
         if (SecI != Obj.section_end()) {
-          uint64_t SectionAddr = SecI->getAddress();
-          uint64_t Address = cantFail(Symbol.getAddress());
           StringRef Name = *NameOrErr;
-          if (Name.consume_front("$") && Name.size() &&
-              strchr("adtx", Name[0])) {
-            AllMappingSymbols[*SecI].emplace_back(Address - SectionAddr,
-                                                  Name[0]);
+          if (Name.size() >= 2 && Name[0] == '$')
             AllSymbols[*SecI].push_back(
                 createSymbolInfo(Obj, Symbol, /*MappingSymbol=*/true));
-          }
         }
       }
       continue;
@@ -1884,8 +1871,6 @@ disassembleObject(ObjectFile &Obj, const ObjectFile &DbgObj,
 
     // Get the list of all the symbols in this section.
     SectionSymbolsTy &Symbols = AllSymbols[Section];
-    auto &MappingSymbols = AllMappingSymbols[Section];
-    llvm::sort(MappingSymbols);
 
     ArrayRef<uint8_t> Bytes = arrayRefFromStringRef(
         unwrapOrError(Section.getContents(), Obj.getFileName()));
@@ -2190,22 +2175,37 @@ disassembleObject(ObjectFile &Obj, const ObjectFile &DbgObj,
 
       while (Index < End) {
         uint64_t RelOffset;
+        if (HasMappingSymbols) {
+          // Mapping symbols are symbols that tell disassemblers how to
+          // interpret the bytes. Here we handle mapping symbols that points to
+          // the byte to be disassembled. Note that some mapping symbols may be
+          // effective until another mapping symbol overrides its effect, while
+          // some may be effective just for a single piece of data.
+          const auto *It = SymbolsHere.begin();
+          for (const auto *const End = SymbolsHere.end();
+               It != End && It->IsMappingSymbol; ++It) {
+            const StringRef SymName = It->Name;
+            if (SymName.size() < 2 || SymName[0] != '$')
+              continue;
 
-        // ARM and AArch64 ELF binaries can interleave data and text in the
-        // same section. We rely on the markers introduced to understand what
-        // we need to dump. If the data marker is within a function, it is
-        // denoted as a word/short etc.
-        if (!MappingSymbols.empty()) {
-          char Kind = getMappingSymbolKind(MappingSymbols, Index);
-          DumpARMELFData = Kind == 'd';
-          if (SecondaryTarget) {
-            if (Kind == 'a') {
-              DT = PrimaryIsThumb ? &*SecondaryTarget : &PrimaryTarget;
-            } else if (Kind == 't') {
-              DT = PrimaryIsThumb ? &PrimaryTarget : &*SecondaryTarget;
-            }
+            const char Kind = SymName[1];
+            if (IsArmElf) {
+              DumpARMELFData = Kind == 'd';
+              if (SecondaryTarget) {
+                if (Kind == 'a') {
+                  DT = PrimaryIsThumb ? &*SecondaryTarget : &PrimaryTarget;
+                } else if (Kind == 't') {
+                  DT = PrimaryIsThumb ? &PrimaryTarget : &*SecondaryTarget;
+                }
+              }
+            } else if (IsAArch64Elf)
+              DumpARMELFData = Kind == 'd';
           }
-        } else if (!CHPECodeMap.empty()) {
+          DT->DisAsm->onMappingSymbols(
+              SectionAddr + Index,
+              SymbolsHere.take_front(It - SymbolsHere.begin()));
+        }
+        if (!CHPECodeMap.empty()) {
           uint64_t Address = SectionAddr + Index;
           auto It = partition_point(
               CHPECodeMap,
@@ -2265,7 +2265,7 @@ disassembleObject(ObjectFile &Obj, const ObjectFile &DbgObj,
 
         if (DumpARMELFData) {
           Size = dumpARMELFData(SectionAddr, Index, End, Obj, Bytes,
-                                MappingSymbols, *DT->SubtargetInfo, FOS);
+                                *DT->SubtargetInfo, FOS);
         } else {
 
           if (DumpTracebackTableForXCOFFFunction &&

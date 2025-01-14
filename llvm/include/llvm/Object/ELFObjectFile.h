@@ -820,7 +820,8 @@ Expected<uint32_t> ELFObjectFile<ELFT>::getSymbolFlags(DataRefImpl Sym) const {
     if (Expected<StringRef> NameOrErr = getSymbolName(Sym)) {
       StringRef Name = *NameOrErr;
       // Mark fake labels (used for label differences) and mapping symbols.
-      if (Name == ".L0 " || Name.starts_with("$d") || Name.starts_with("$x"))
+      if (Name == ".L0 " || Name.starts_with("$d") || Name.starts_with("$x") ||
+          Name.starts_with("$s"))
         Result |= SymbolRef::SF_FormatSpecific;
     } else {
       // TODO: Actually report errors helpfully.

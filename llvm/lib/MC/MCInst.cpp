@@ -53,6 +53,8 @@ bool MCOperand::evaluateAsConstantImm(int64_t &Imm) const {
     Imm = getImm();
     return true;
   }
+  if (isExpr())
+    return getExpr()->evaluateAsAbsolute(Imm);
   return false;
 }
 

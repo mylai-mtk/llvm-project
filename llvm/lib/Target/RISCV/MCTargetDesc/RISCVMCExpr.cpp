@@ -36,8 +36,8 @@ const RISCVMCExpr *RISCVMCExpr::create(const MCExpr *Expr, VariantKind Kind,
 
 void RISCVMCExpr::printImpl(raw_ostream &OS, const MCAsmInfo *MAI) const {
   VariantKind Kind = getKind();
-  bool HasVariant = ((Kind != VK_RISCV_None) && (Kind != VK_RISCV_CALL) &&
-                     (Kind != VK_RISCV_CALL_PLT));
+  bool HasVariant = Kind != VK_RISCV_None && Kind != VK_RISCV_CALL &&
+                    Kind != VK_RISCV_CALL_PLT && Kind != VK_RISCV_LPAD_LABEL;
 
   if (HasVariant)
     OS << '%' << getVariantKindName(getKind()) << '(';
@@ -262,4 +262,8 @@ RISCVLpadHashMCExpr::create(const uint32_t CFITok, const StringRef CFITokSrc,
                             MCContext &Ctx) {
   return new (Ctx)
       RISCVLpadHashMCExpr(MCConstantExpr::create(CFITok, Ctx), CFITokSrc);
+}
+
+void RISCVLpadHashMCExpr::printImpl(raw_ostream &OS, const MCAsmInfo *) const {
+  OS << "%lpad_hash(\"" << CFITokSrc << "\")";
 }

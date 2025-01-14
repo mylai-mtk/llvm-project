@@ -160,6 +160,18 @@ public:
   virtual Expected<bool> onSymbolStart(SymbolInfoTy &Symbol, uint64_t &Size,
                                        ArrayRef<uint8_t> Bytes,
                                        uint64_t Address) const;
+
+  /// Used to allow the target disassembler to tweak itself before disassembling
+  /// a given address according to encountered mapping symbols.
+  ///
+  /// Base implementation does nothing.
+  ///
+  /// \param Address  - The address, in the memory space of region, of the first
+  ///                   byte of the symbol.
+  /// \param MSyms    - An array of mapping symbols at Address.
+  virtual void onMappingSymbols(const uint64_t Address,
+                                const ArrayRef<SymbolInfoTy> MSyms);
+
   // TODO:
   // Implement similar hooks that can be used at other points during
   // disassembly. Something along the following lines:

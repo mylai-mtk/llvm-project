@@ -20,6 +20,9 @@ Expected<bool> MCDisassembler::onSymbolStart(SymbolInfoTy &Symbol,
   return false;
 }
 
+void MCDisassembler::onMappingSymbols(const uint64_t Address,
+                                      const ArrayRef<SymbolInfoTy> MSyms) {}
+
 uint64_t MCDisassembler::suggestBytesToSkip(ArrayRef<uint8_t> Bytes,
                                             uint64_t Address) const {
   return 1;

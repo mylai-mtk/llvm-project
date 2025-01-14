@@ -187,10 +187,14 @@ public:
       }
       break;
     }
-    case RISCV::AUIPC:
-      setGPRState(Inst.getOperand(0).getReg(),
-                  Addr + (Inst.getOperand(1).getImm() << 12));
+    case RISCV::AUIPC: {
+      const MCRegister DefReg = Inst.getOperand(0).getReg();
+      const bool IsLpad = DefReg == RISCV::X0;
+      if (IsLpad)
+        break;
+      setGPRState(DefReg, Addr + (Inst.getOperand(1).getImm() << 12));
       break;
+    }
     }
   }
 
