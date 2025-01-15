@@ -119,7 +119,12 @@ MCSymbol *RISCVTargetStreamer::emitLpadMappingSymbol(const StringRef) {
   return nullptr;
 }
 
-void RISCVTargetStreamer::recordLpadInfo(const MCSymbol &, const uint32_t) {}
+bool RISCVTargetStreamer::recordLpadInfo(const MCSymbol &, const uint32_t,
+                                         const bool) {
+  // By default we don't need to keep lpad info. Return success in this case to
+  // simplify error handling
+  return true;
+}
 
 void RISCVTargetStreamer::clearLpadInfos() {}
 

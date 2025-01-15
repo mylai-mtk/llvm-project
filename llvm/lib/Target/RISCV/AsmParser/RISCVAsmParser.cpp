@@ -235,6 +235,7 @@ class RISCVAsmParser : public MCTargetAsmParser {
   bool parseDirectiveAttribute();
   bool parseDirectiveInsn(SMLoc L);
   bool parseDirectiveVariantCC();
+  bool parseDirectiveLpadInfo();
 
   /// Helper to reset target features for a new arch string. It
   /// also records the new arch string that is expanded by RISCVISAInfo
@@ -1033,6 +1034,18 @@ public:
                                VK == RISCVMCExpr::VK_RISCV_TLS_GOT_HI ||
                                VK == RISCVMCExpr::VK_RISCV_TLS_GD_HI ||
                                VK == RISCVMCExpr::VK_RISCV_TLSDESC_HI);
+  }
+
+  bool isUImm20LPAD(int64_t *Out = nullptr) const {
+    RISCVMCExpr::VariantKind VK;
+    int64_t Imm;
+    if (!Out)
+      Out = &Imm;
+    return isImm() && evaluateConstantImm(getImm(), *Out, VK) &&
+           isUInt<20>(*Out) &&
+           (VK == RISCVMCExpr::VK_RISCV_None ||
+            VK == RISCVMCExpr::VK_RISCV_LPAD_LABEL ||
+            VK == RISCVMCExpr::VK_RISCV_LPAD_HASH);
   }
 
   bool isSImm21Lsb0JAL() const { return isBareSimmNLsb0<21>(); }
@@ -2910,6 +2923,8 @@ ParseStatus RISCVAsmParser::parseDirective(AsmToken DirectiveID) {
     return parseDirectiveInsn(DirectiveID.getLoc());
   if (IDVal == ".variant_cc")
     return parseDirectiveVariantCC();
+  if (IDVal == ".lpad_info")
+    return parseDirectiveLpadInfo();
 
   return ParseStatus::NoMatch;
 }
@@ -3342,6 +3357,36 @@ bool RISCVAsmParser::parseDirectiveVariantCC() {
     return true;
   getTargetStreamer().emitDirectiveVariantCC(
       *getContext().getOrCreateSymbol(Name));
+  return false;
+}
+
+/// parseDirectiveLpadInfo
+///  ::= .lpad_info func_symbol, lpad_value
+bool RISCVAsmParser::parseDirectiveLpadInfo() {
+  MCAsmParser &Parser = getParser();
+  StringRef FuncSymName;
+  if (Parser.parseIdentifier(FuncSymName))
+    return TokError("expected symbol name");
+
+  if (Parser.getTok().isNot(AsmToken::Comma))
+    return TokError("expected comma");
+  Lex(); // eat comma
+
+  SmallVector<std::unique_ptr<MCParsedAsmOperand>, 1> Operands;
+  if (!parseImmediate(Operands).isSuccess())
+    return true;
+  int64_t LpadVal;
+  if (Operands.size() != 1 || !Operands[0] ||
+      !static_cast<RISCVOperand *>(Operands[0].get())->isUImm20LPAD(&LpadVal))
+    return Error(getLoc(), "expected absolute 20-bit immediate");
+
+  if (parseEOL())
+    return true;
+
+  if (!getTargetStreamer().recordLpadInfo(
+          *getContext().getOrCreateSymbol(FuncSymName), LpadVal,
+          /*Forced=*/true))
+    return Error(getLoc(), "conflicting lpad value for '" + FuncSymName + "'");
   return false;
 }
 

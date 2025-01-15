@@ -728,7 +728,7 @@ RISCVAsmBackend::getLpadinfoSectionContent(const MCAssembler &Asm) {
   using SymLocT = std::pair<uint16_t, uint64_t>; // <st_shndx, st_value>
 
   DenseMap<SymLocT, uint32_t> LocToLpadVals;
-  for (const auto &[Sym, LpadVal] : LpadInfos) {
+  for (const auto &[Sym, LI] : LpadInfos) {
     const MCSymbolELF &AnchorSym = static_cast<const MCSymbolELF &>(*Sym);
     if (!AnchorSym.isFinalizedInSymTab())
       continue;
@@ -739,10 +739,15 @@ RISCVAsmBackend::getLpadinfoSectionContent(const MCAssembler &Asm) {
 
     const SymLocT AnchorLoc{AnchorSymSec, AnchorSym.getStValue()};
 
-    [[maybe_unused]] const auto [It, New] =
-        LocToLpadVals.try_emplace(AnchorLoc, LpadVal);
-    assert((New || It->second == LpadVal) &&
-           "Found conflicting lpad values at AnchorLoc");
+    if (const auto [It, New] = LocToLpadVals.try_emplace(AnchorLoc, LI.LpadVal);
+        !New) {
+      if (LI.Forced) {
+        It->second = LI.LpadVal;
+      } else {
+        assert(It->second == LI.LpadVal &&
+               "Found conflicting lpad values at AnchorLoc");
+      }
+    }
   }
 
   raw_string_ostream OS(LpadInfoSecContent);
@@ -770,7 +775,7 @@ RISCVAsmBackend::getLpadinfoSectionContent(const MCAssembler &Asm) {
     } else if (const auto It = LpadInfos.find(&S); It != LpadInfos.end()) {
       // Fallback to use symbol address to lookup lpad value. Undefined weak
       // functions take this path
-      LpiValue = It->second;
+      LpiValue = It->second.LpadVal;
     } else
       continue;
 

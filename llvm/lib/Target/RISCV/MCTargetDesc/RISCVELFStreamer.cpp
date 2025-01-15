@@ -93,13 +93,21 @@ void RISCVTargetELFStreamer::emitLpadInfoSectionHeader() {
   Streamer.popSection();
 }
 
-void RISCVTargetELFStreamer::recordLpadInfo(const MCSymbol &AnchorSym,
-                                            const uint32_t LpadVal) {
+bool RISCVTargetELFStreamer::recordLpadInfo(const MCSymbol &AnchorSym,
+                                            const uint32_t LpadVal,
+                                            const bool Forced) {
   auto &RAB =
       static_cast<RISCVAsmBackend &>(getStreamer().getAssembler().getBackend());
-  [[maybe_unused]] const auto [It, New] =
-      RAB.LpadInfos.try_emplace(&AnchorSym, LpadVal);
-  assert((New || It->second == LpadVal) && "Found conflicting lpad values");
+  const auto [It, New] = RAB.LpadInfos.try_emplace(&AnchorSym, LpadVal, Forced);
+  if (New)
+    return true;
+
+  if (Forced && !It->second.Forced) {
+    It->second.LpadVal = LpadVal;
+    It->second.Forced = true;
+    return true;
+  }
+  return LpadVal == It->second.LpadVal;
 }
 
 void RISCVTargetELFStreamer::clearLpadInfos() {

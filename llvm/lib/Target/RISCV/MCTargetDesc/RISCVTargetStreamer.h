@@ -64,8 +64,8 @@ public:
   /// symbol
   virtual MCSymbol *emitLpadMappingSymbol(const StringRef Label);
 
-  virtual void recordLpadInfo(const MCSymbol &AnchorSym,
-                              const uint32_t LpadVal);
+  virtual bool recordLpadInfo(const MCSymbol &AnchorSym, const uint32_t LpadVal,
+                              const bool Forced = false);
   virtual void clearLpadInfos();
 
   void emitTargetAttributes(const MCSubtargetInfo &STI, bool EmitStackAlign);

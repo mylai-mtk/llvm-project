@@ -110,7 +110,13 @@ public:
   getSectionContentAfterSymbolTableIsFinalized(MCSection &Sec,
                                                const MCAssembler &Asm) override;
 
-  DenseMap<const MCSymbol *, uint32_t> LpadInfos;
+  struct LpadInfo {
+    LpadInfo(const uint32_t LpadVal, const bool Forced)
+        : LpadVal(LpadVal), Forced(Forced) {}
+    uint32_t LpadVal;
+    bool Forced;
+  };
+  DenseMap<const MCSymbol *, LpadInfo> LpadInfos;
 
 private:
   std::optional<StringRef> getLpadinfoSectionContent(const MCAssembler &Asm);

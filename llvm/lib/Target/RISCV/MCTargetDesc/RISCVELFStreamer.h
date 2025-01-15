@@ -74,8 +74,9 @@ public:
 
   MCSymbol *emitLpadMappingSymbol(const StringRef Label) override;
 
-  void recordLpadInfo(const MCSymbol &AnchorSym,
-                      const uint32_t LpadVal) override;
+  /// Returns true if everything goes well; returns false if conflicts occur
+  bool recordLpadInfo(const MCSymbol &AnchorSym, const uint32_t LpadVal,
+                      const bool Forced = false) override;
   void clearLpadInfos() override;
 
   void finish() override;
