@@ -100,6 +100,7 @@ public:
   std::map<HwasanMemaccessTuple, MCSymbol *> HwasanMemaccessSymbols;
   void LowerHWASAN_CHECK_MEMACCESS(const MachineInstr &MI);
   void LowerKCFI_CHECK(const MachineInstr &MI);
+  void LowerPseudoSETUP_LPAD_LABEL(const MachineInstr &MI);
   void EmitHwasanMemaccessSymbols(Module &M);
 
   // Wrapper needed for tblgenned pseudo lowering.
@@ -322,6 +323,8 @@ void RISCVAsmPrinter::emitInstruction(const MachineInstr *MI) {
   case RISCV::KCFI_CHECK:
     LowerKCFI_CHECK(*MI);
     return;
+  case RISCV::PseudoSETUP_LPAD_LABEL:
+    return LowerPseudoSETUP_LPAD_LABEL(*MI);
   case TargetOpcode::STACKMAP:
     return LowerSTACKMAP(*OutStreamer, SM, *MI);
   case TargetOpcode::PATCHPOINT:
@@ -1322,4 +1325,19 @@ void RISCVAsmPrinter::emitMachineConstantPoolValue(
       MCSymbolRefExpr::create(MCSym, MCSymbolRefExpr::VK_None, OutContext);
   uint64_t Size = getDataLayout().getTypeAllocSize(RCPV->getType());
   OutStreamer->emitValue(Expr, Size);
+}
+
+void RISCVAsmPrinter::LowerPseudoSETUP_LPAD_LABEL(const MachineInstr &MI) {
+  const StringRef LabelSrc =
+      cast<MDString>(MI.getOperand(1).getMetadata()->getOperand(0))
+          ->getString();
+  auto &RTS =
+      *static_cast<RISCVTargetStreamer *>(OutStreamer->getTargetStreamer());
+  RTS.emitLpadMappingSymbol(LabelSrc);
+  const MCSubtargetInfo &MCSTI = *TM.getMCSubtargetInfo();
+  EmitToStreamer(*OutStreamer,
+                 MCInstBuilder(RISCV::LUI)
+                     .addReg(RISCV::X7)
+                     .addImm(MI.getOperand(0).getImm()),
+                 MCSTI);
 }

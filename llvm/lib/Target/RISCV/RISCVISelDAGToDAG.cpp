@@ -2274,6 +2274,17 @@ void RISCVDAGToDAGISel::Select(SDNode *Node) {
     case Intrinsic::riscv_sf_vc_i_se:
       selectSF_VC_X_SE(Node);
       return;
+    case Intrinsic::riscv_set_lpad_label: {
+      const SmallVector<SDValue, 3> Operands = {
+          Node->getOperand(2), // Label
+          Node->getOperand(3), // LabelSrc
+          Node->getOperand(0), // InChain
+      };
+      MachineSDNode *Pseudo = CurDAG->getMachineNode(
+          RISCV::PseudoSETUP_LPAD_LABEL, DL, Node->getVTList(), Operands);
+      ReplaceNode(Node, Pseudo);
+      return;
+    }
     }
     break;
   }

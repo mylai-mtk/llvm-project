@@ -807,6 +807,14 @@ def SRAW  : ALUW_rr<0b0100000, 0b101, "sraw">,
 } // IsSignExtendingOpW = 1
 } // Predicates = [IsRV64]
 
+let Predicates = [HasStdExtZicfilp], Size = 4, mayLoad = 0, mayStore = 0,
+    hasSideEffects = 1 in {
+def PseudoSETUP_LPAD_LABEL :
+    Pseudo<(outs), (ins uimm20:$label, Operand<MetadataVT>:$label_src), []> {
+  let Defs = [X7];
+}
+}
+
 //===----------------------------------------------------------------------===//
 // Privileged instructions
 //===----------------------------------------------------------------------===//
