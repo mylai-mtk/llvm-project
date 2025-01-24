@@ -14,6 +14,8 @@
 
 namespace llvm {
 
+class MCSymbol;
+
 class RISCVELFStreamer : public MCELFStreamer {
   void reset() override;
   void emitDataMappingSymbol();
@@ -50,6 +52,8 @@ private:
                             StringRef StringValue) override;
   void finishAttributeSection() override;
 
+  void emitLpadInfoSectionHeader();
+
   void reset() override;
 
 public:
@@ -65,6 +69,10 @@ public:
   void emitDirectiveOptionRelax() override;
   void emitDirectiveOptionNoRelax() override;
   void emitDirectiveVariantCC(MCSymbol &Symbol) override;
+
+  void recordLpadInfo(const MCSymbol &AnchorSym,
+                      const uint32_t LpadVal) override;
+  void clearLpadInfos() override;
 
   void finish() override;
 };

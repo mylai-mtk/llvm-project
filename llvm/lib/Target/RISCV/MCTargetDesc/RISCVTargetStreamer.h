@@ -16,6 +16,7 @@
 namespace llvm {
 
 class formatted_raw_ostream;
+class MCSymbol;
 
 enum class RISCVOptionArchArgType {
   Full,
@@ -57,6 +58,10 @@ public:
   virtual void emitIntTextAttribute(unsigned Attribute, unsigned IntValue,
                                     StringRef StringValue);
   void emitNoteGnuPropertySection(const uint32_t Feature1And);
+
+  virtual void recordLpadInfo(const MCSymbol &AnchorSym,
+                              const uint32_t LpadVal);
+  virtual void clearLpadInfos();
 
   void emitTargetAttributes(const MCSubtargetInfo &STI, bool EmitStackAlign);
   void setTargetABI(RISCVABI::ABI ABI);

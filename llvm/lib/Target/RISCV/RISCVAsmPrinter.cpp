@@ -11,7 +11,9 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "MCTargetDesc/RISCVAsmBackend.h"
 #include "MCTargetDesc/RISCVBaseInfo.h"
+#include "MCTargetDesc/RISCVELFStreamer.h"
 #include "MCTargetDesc/RISCVInstPrinter.h"
 #include "MCTargetDesc/RISCVMCExpr.h"
 #include "MCTargetDesc/RISCVMatInt.h"
@@ -30,6 +32,7 @@
 #include "llvm/CodeGen/MachineModuleInfo.h"
 #include "llvm/IR/Module.h"
 #include "llvm/MC/MCAsmInfo.h"
+#include "llvm/MC/MCAssembler.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCInst.h"
 #include "llvm/MC/MCInstBuilder.h"
@@ -108,7 +111,8 @@ public:
   void emitFunctionEntryLabel() override;
   bool emitDirectiveOptionArch();
 
-  void emitNoteGnuProperty(const Module &M);
+  uint32_t emitNoteGnuProperty(const Module &M);
+  void emitLpadInfos(const Module &M);
 
 private:
   void emitAttributes(const MCSubtargetInfo &SubtargetInfo);
@@ -582,7 +586,13 @@ void RISCVAsmPrinter::emitEndOfAsmFile(Module &M) {
 
   if (TM.getTargetTriple().isOSBinFormatELF()) {
     RTS.finishAttributeSection();
-    emitNoteGnuProperty(M);
+
+    const uint32_t Feature1And = emitNoteGnuProperty(M);
+    if (Feature1And & ELF::GNU_PROPERTY_RISCV_FEATURE_1_CFI_LP_UNLABELED)
+      // Clear LpadInfos to prevent emitting .riscv.lpadinfo section
+      RTS.clearLpadInfos();
+    else if (Feature1And & ELF::GNU_PROPERTY_RISCV_FEATURE_1_CFI_LP_FUNC_SIG)
+      emitLpadInfos(M);
   }
   EmitHwasanMemaccessSymbols(M);
 }
@@ -942,7 +952,7 @@ void RISCVAsmPrinter::EmitHwasanMemaccessSymbols(Module &M) {
   }
 }
 
-void RISCVAsmPrinter::emitNoteGnuProperty(const Module &M) {
+uint32_t RISCVAsmPrinter::emitNoteGnuProperty(const Module &M) {
   uint32_t Feature1And = 0;
   if (const Metadata *const Flag = M.getModuleFlag("cf-protection-branch");
       Flag && !mdconst::extract<ConstantInt>(Flag)->isZero()) {
@@ -957,7 +967,7 @@ void RISCVAsmPrinter::emitNoteGnuProperty(const Module &M) {
     switch (getZicfilpLabelScheme(CFBranchLabelScheme)) {
     case ZicfilpLabelSchemeKind::Invalid:
       report_fatal_error("invalid cf-branch-label-scheme for RISC-V targets");
-      return;
+      return 0;
     case ZicfilpLabelSchemeKind::Unlabeled:
       Feature1And |= ELF::GNU_PROPERTY_RISCV_FEATURE_1_CFI_LP_UNLABELED;
       break;
@@ -972,11 +982,70 @@ void RISCVAsmPrinter::emitNoteGnuProperty(const Module &M) {
     Feature1And |= ELF::GNU_PROPERTY_RISCV_FEATURE_1_CFI_SS;
 
   if (!Feature1And)
-    return;
+    return 0;
 
   RISCVTargetStreamer &RTS =
       static_cast<RISCVTargetStreamer &>(*OutStreamer->getTargetStreamer());
   RTS.emitNoteGnuPropertySection(Feature1And);
+  return Feature1And;
+}
+
+void RISCVAsmPrinter::emitLpadInfos(const Module &M) {
+  auto &RTS =
+      *static_cast<RISCVTargetStreamer *>(OutStreamer->getTargetStreamer());
+  for (const Function &F : M) {
+    if (const MDNode *const MD = F.getMetadata("riscv_lpad_label")) {
+      const uint32_t LpadLabel =
+          mdconst::extract<ConstantInt>(MD->getOperand(0))->getZExtValue();
+      RTS.recordLpadInfo(*getSymbol(&F), LpadLabel);
+    }
+  }
+
+  DenseMap<const GlobalAlias *, uint32_t> GAToLpadVal;
+  DenseSet<const GlobalAlias *> OtherHandledGAs;
+  const auto GALpadInfoRecorder = [&](const ArrayRef<const GlobalAlias *> GAs,
+                                      const uint32_t LpadVal) {
+    for (const GlobalAlias *const GA : GAs) {
+      RTS.recordLpadInfo(*getSymbol(GA), LpadVal);
+      GAToLpadVal.try_emplace(GA, LpadVal);
+    }
+  };
+  for (const GlobalAlias &GA : M.aliases()) {
+    if (GAToLpadVal.contains(&GA) || OtherHandledGAs.contains(&GA))
+      continue;
+
+    SmallVector<const GlobalAlias *, 1> GAs = {&GA};
+    const Constant *Aliasee = GA.getAliasee();
+    while (const auto *const AliaseeGA = dyn_cast<GlobalAlias>(Aliasee)) {
+      if (const auto It = GAToLpadVal.find(AliaseeGA);
+          It != GAToLpadVal.end()) {
+        GALpadInfoRecorder(GAs, It->second);
+        goto NextModuleGA;
+      }
+
+      if (OtherHandledGAs.contains(AliaseeGA))
+        goto CompleteHandleOtherGAs;
+
+      GAs.push_back(AliaseeGA);
+      Aliasee = AliaseeGA->getAliasee();
+    }
+
+    if (const auto *const F = dyn_cast<Function>(Aliasee)) {
+      if (const MDNode *const MD = F->getMetadata("riscv_lpad_label")) {
+        const uint32_t LpadLabel =
+            mdconst::extract<ConstantInt>(MD->getOperand(0))->getZExtValue();
+        GALpadInfoRecorder(GAs, LpadLabel);
+        goto NextModuleGA;
+      }
+    }
+
+  CompleteHandleOtherGAs:
+    for (const GlobalAlias *const HandledGA : GAs)
+      OtherHandledGAs.insert(HandledGA);
+
+  NextModuleGA:
+    continue;
+  }
 }
 
 static MCOperand lowerSymbolOperand(const MachineOperand &MO, MCSymbol *Sym,

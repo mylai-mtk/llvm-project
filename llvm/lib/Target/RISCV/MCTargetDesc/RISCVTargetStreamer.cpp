@@ -115,6 +115,10 @@ void RISCVTargetStreamer::emitNoteGnuPropertySection(
   OutStreamer.popSection();
 }
 
+void RISCVTargetStreamer::recordLpadInfo(const MCSymbol &, const uint32_t) {}
+
+void RISCVTargetStreamer::clearLpadInfos() {}
+
 void RISCVTargetStreamer::setTargetABI(RISCVABI::ABI ABI) {
   assert(ABI != RISCVABI::ABI_Unknown && "Improperly initialized target ABI");
   TargetABI = ABI;

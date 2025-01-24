@@ -12,13 +12,16 @@
 #include "MCTargetDesc/RISCVBaseInfo.h"
 #include "MCTargetDesc/RISCVFixupKinds.h"
 #include "MCTargetDesc/RISCVMCTargetDesc.h"
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/MC/MCAsmBackend.h"
 #include "llvm/MC/MCFixupKindInfo.h"
 #include "llvm/MC/MCSubtargetInfo.h"
+#include <string>
 
 namespace llvm {
 class MCAssembler;
 class MCObjectTargetWriter;
+class MCSymbol;
 class raw_ostream;
 
 class RISCVAsmBackend : public MCAsmBackend {
@@ -27,6 +30,8 @@ class RISCVAsmBackend : public MCAsmBackend {
   bool Is64Bit;
   bool ForceRelocs = false;
   const MCTargetOptions &TargetOptions;
+
+  std::string LpadInfoSecContent;
 
 public:
   RISCVAsmBackend(const MCSubtargetInfo &STI, uint8_t OSABI, bool Is64Bit,
@@ -100,6 +105,15 @@ public:
                     const MCSubtargetInfo *STI) const override;
 
   const MCTargetOptions &getTargetOptions() const { return TargetOptions; }
+
+  std::optional<StringRef>
+  getSectionContentAfterSymbolTableIsFinalized(MCSection &Sec,
+                                               const MCAssembler &Asm) override;
+
+  DenseMap<const MCSymbol *, uint32_t> LpadInfos;
+
+private:
+  std::optional<StringRef> getLpadinfoSectionContent(const MCAssembler &Asm);
 };
 }
 

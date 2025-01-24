@@ -81,6 +81,32 @@ void RISCVTargetELFStreamer::finishAttributeSection() {
                           ELF::SHT_RISCV_ATTRIBUTES, AttributeSection);
 }
 
+void RISCVTargetELFStreamer::emitLpadInfoSectionHeader() {
+  MCStreamer &Streamer = getStreamer();
+  MCContext &Ctx = Streamer.getContext();
+  Streamer.pushSection();
+  MCSectionELF *const Sec =
+      Ctx.getELFSection(".riscv.lpadinfo", ELF::SHT_RISCV_LPADINFO, 0);
+  Sec->setIsHeaderPlaceholderAtWriteOut();
+  Streamer.switchSection(Sec);
+  Streamer.popSection();
+}
+
+void RISCVTargetELFStreamer::recordLpadInfo(const MCSymbol &AnchorSym,
+                                            const uint32_t LpadVal) {
+  auto &RAB =
+      static_cast<RISCVAsmBackend &>(getStreamer().getAssembler().getBackend());
+  [[maybe_unused]] const auto [It, New] =
+      RAB.LpadInfos.try_emplace(&AnchorSym, LpadVal);
+  assert((New || It->second == LpadVal) && "Found conflicting lpad values");
+}
+
+void RISCVTargetELFStreamer::clearLpadInfos() {
+  auto &RAB =
+      static_cast<RISCVAsmBackend &>(getStreamer().getAssembler().getBackend());
+  RAB.LpadInfos.clear();
+}
+
 void RISCVTargetELFStreamer::finish() {
   RISCVTargetStreamer::finish();
   ELFObjectWriter &W = getStreamer().getWriter();
@@ -114,6 +140,11 @@ void RISCVTargetELFStreamer::finish() {
   }
 
   W.setELFHeaderEFlags(EFlags);
+
+  const auto &RAB =
+      static_cast<RISCVAsmBackend &>(getStreamer().getAssembler().getBackend());
+  if (!RAB.LpadInfos.empty())
+    emitLpadInfoSectionHeader();
 }
 
 void RISCVTargetELFStreamer::reset() {
