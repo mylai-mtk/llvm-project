@@ -77,6 +77,9 @@ enum Fixups {
   fixup_riscv_tlsdesc_load_lo12,
   fixup_riscv_tlsdesc_add_lo12,
   fixup_riscv_tlsdesc_call,
+  // Used to generate an R_RISCV_LPAD relocation, which indicates the linker
+  // that this insn is an lpad and enables possible relaxations
+  fixup_riscv_lpad,
 
   // Used as a sentinel, must be the last
   fixup_riscv_invalid,

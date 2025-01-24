@@ -92,6 +92,8 @@ RISCVAsmBackend::getFixupKindInfo(MCFixupKind Kind) const {
       {"fixup_riscv_tlsdesc_load_lo12", 20, 12, 0},
       {"fixup_riscv_tlsdesc_add_lo12", 20, 12, 0},
       {"fixup_riscv_tlsdesc_call", 0, 0, 0},
+
+      {"fixup_riscv_lpad", 12, 20, 0},
   };
   static_assert((std::size(Infos)) == RISCV::NumTargetFixupKinds,
                 "Not all fixup kinds added to Infos array");

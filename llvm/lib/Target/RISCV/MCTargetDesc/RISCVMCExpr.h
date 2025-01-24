@@ -14,6 +14,7 @@
 #ifndef LLVM_LIB_TARGET_RISCV_MCTARGETDESC_RISCVMCEXPR_H
 #define LLVM_LIB_TARGET_RISCV_MCTARGETDESC_RISCVMCEXPR_H
 
+#include "llvm/ADT/StringRef.h"
 #include "llvm/MC/MCExpr.h"
 
 namespace llvm {
@@ -41,6 +42,8 @@ public:
     VK_RISCV_TLSDESC_LOAD_LO,
     VK_RISCV_TLSDESC_ADD_LO,
     VK_RISCV_TLSDESC_CALL,
+    VK_RISCV_LPAD_LABEL,
+    VK_RISCV_LPAD_HASH,
     VK_RISCV_Invalid // Must be the last item
   };
 
@@ -50,6 +53,7 @@ private:
 
   int64_t evaluateAsInt64(int64_t Value) const;
 
+protected:
   explicit RISCVMCExpr(const MCExpr *Expr, VariantKind Kind)
       : Expr(Expr), Kind(Kind) {}
 
@@ -86,6 +90,29 @@ public:
 
   static VariantKind getVariantKindForName(StringRef name);
   static StringRef getVariantKindName(VariantKind Kind);
+};
+
+class RISCVLpadHashMCExpr : public RISCVMCExpr {
+  explicit RISCVLpadHashMCExpr(const MCExpr *const Expr,
+                               const StringRef CFITokSrc)
+      : RISCVMCExpr(Expr, VK_RISCV_LPAD_HASH), CFITokSrc(CFITokSrc) {}
+
+  /// The hash source of the contained CFI token. If empty, it means the CFI
+  /// token hash source string is empty
+  const StringRef CFITokSrc;
+
+public:
+  StringRef getCFITokSrc() const { return CFITokSrc; }
+
+  static const RISCVLpadHashMCExpr *
+  create(const uint32_t CFITok, const StringRef CFITokSrc, MCContext &Ctx);
+
+  static bool classof(const MCExpr *E) {
+    if (!RISCVMCExpr::classof(E))
+      return false;
+    const VariantKind Kind = static_cast<const RISCVMCExpr *>(E)->getKind();
+    return Kind == VK_RISCV_LPAD_HASH;
+  }
 };
 
 } // end namespace llvm.

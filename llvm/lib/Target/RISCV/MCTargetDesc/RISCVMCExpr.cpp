@@ -29,6 +29,8 @@ using namespace llvm;
 
 const RISCVMCExpr *RISCVMCExpr::create(const MCExpr *Expr, VariantKind Kind,
                                        MCContext &Ctx) {
+  assert(Kind != VK_RISCV_LPAD_HASH &&
+         "Create specialized RISCVMCExpr instead!");
   return new (Ctx) RISCVMCExpr(Expr, Kind);
 }
 
@@ -123,6 +125,8 @@ RISCVMCExpr::VariantKind RISCVMCExpr::getVariantKindForName(StringRef name) {
       .Case("tlsdesc_load_lo", VK_RISCV_TLSDESC_LOAD_LO)
       .Case("tlsdesc_add_lo", VK_RISCV_TLSDESC_ADD_LO)
       .Case("tlsdesc_call", VK_RISCV_TLSDESC_CALL)
+      .Case("lpad_label", VK_RISCV_LPAD_LABEL)
+      .Case("lpad_hash", VK_RISCV_LPAD_HASH)
       .Default(VK_RISCV_Invalid);
 }
 
@@ -165,6 +169,10 @@ StringRef RISCVMCExpr::getVariantKindName(VariantKind Kind) {
     return "call_plt";
   case VK_RISCV_32_PCREL:
     return "32_pcrel";
+  case VK_RISCV_LPAD_LABEL:
+    return "lpad_label";
+  case VK_RISCV_LPAD_HASH:
+    return "lpad_hash";
   }
   llvm_unreachable("Invalid ELF symbol kind");
 }
@@ -243,5 +251,15 @@ int64_t RISCVMCExpr::evaluateAsInt64(int64_t Value) const {
   case VK_RISCV_HI:
     // Add 1 if bit 11 is 1, to compensate for low 12 bits being negative.
     return ((Value + 0x800) >> 12) & 0xfffff;
+  case VK_RISCV_LPAD_LABEL:
+  case VK_RISCV_LPAD_HASH:
+    return Value;
   }
+}
+
+const RISCVLpadHashMCExpr *
+RISCVLpadHashMCExpr::create(const uint32_t CFITok, const StringRef CFITokSrc,
+                            MCContext &Ctx) {
+  return new (Ctx)
+      RISCVLpadHashMCExpr(MCConstantExpr::create(CFITok, Ctx), CFITokSrc);
 }

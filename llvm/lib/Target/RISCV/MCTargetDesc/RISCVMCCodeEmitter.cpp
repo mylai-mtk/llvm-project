@@ -419,6 +419,7 @@ uint64_t RISCVMCCodeEmitter::getImmOpValue(const MCInst &MI, unsigned OpNo,
   MCExpr::ExprKind Kind = Expr->getKind();
   RISCV::Fixups FixupKind = RISCV::fixup_riscv_invalid;
   bool RelaxCandidate = false;
+  unsigned EncodedPlaceholder = 0;
   if (Kind == MCExpr::Target) {
     const RISCVMCExpr *RVExpr = cast<RISCVMCExpr>(Expr);
 
@@ -504,6 +505,22 @@ uint64_t RISCVMCCodeEmitter::getImmOpValue(const MCInst &MI, unsigned OpNo,
     case RISCVMCExpr::VK_RISCV_TLSDESC_CALL:
       FixupKind = RISCV::fixup_riscv_tlsdesc_call;
       break;
+    case RISCVMCExpr::VK_RISCV_LPAD_LABEL:
+    case RISCVMCExpr::VK_RISCV_LPAD_HASH: {
+      int64_t Label;
+      [[maybe_unused]] const bool IsConst = RVExpr->evaluateAsConstant(Label);
+      assert(IsConst && "An RISC-V lpad label is expected to be constant");
+      EncodedPlaceholder = Label & 0xFFFFFLL;
+
+      const bool IsLpad = MI.getOpcode() == RISCV::AUIPC &&
+                          MI.getOperand(0).getReg() == RISCV::X0;
+      if (!IsLpad)
+        return EncodedPlaceholder;
+
+      FixupKind = RISCV::fixup_riscv_lpad;
+      RelaxCandidate = true;
+      break;
+    }
     }
   } else if ((Kind == MCExpr::SymbolRef &&
                  cast<MCSymbolRefExpr>(Expr)->getKind() ==
@@ -540,7 +557,7 @@ uint64_t RISCVMCCodeEmitter::getImmOpValue(const MCInst &MI, unsigned OpNo,
     ++MCNumFixups;
   }
 
-  return 0;
+  return EncodedPlaceholder;
 }
 
 unsigned RISCVMCCodeEmitter::getVMaskReg(const MCInst &MI, unsigned OpNo,
