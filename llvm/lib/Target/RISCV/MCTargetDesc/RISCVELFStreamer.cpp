@@ -21,6 +21,7 @@
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCELFObjectWriter.h"
 #include "llvm/MC/MCSubtargetInfo.h"
+#include <string>
 
 using namespace llvm;
 
@@ -156,6 +157,10 @@ void RISCVTargetELFStreamer::emitDirectiveVariantCC(MCSymbol &Symbol) {
   cast<MCSymbolELF>(Symbol).setOther(ELF::STO_RISCV_VARIANT_CC);
 }
 
+MCSymbol *RISCVTargetELFStreamer::emitLpadMappingSymbol(const StringRef Label) {
+  return &getStreamer().emitLpadMappingSymbol(Label);
+}
+
 void RISCVELFStreamer::reset() {
   static_cast<RISCVTargetStreamer *>(getTargetStreamer())->reset();
   MCELFStreamer::reset();
@@ -177,11 +182,12 @@ void RISCVELFStreamer::emitInstructionsMappingSymbol() {
   LastEMS = EMS_Instructions;
 }
 
-void RISCVELFStreamer::emitMappingSymbol(StringRef Name) {
+MCSymbol &RISCVELFStreamer::emitMappingSymbol(StringRef Name) {
   auto *Symbol = cast<MCSymbolELF>(getContext().createLocalSymbol(Name));
   emitLabel(Symbol);
   Symbol->setType(ELF::STT_NOTYPE);
   Symbol->setBinding(ELF::STB_LOCAL);
+  return *Symbol;
 }
 
 void RISCVELFStreamer::changeSection(MCSection *Section, uint32_t Subsection) {
@@ -215,6 +221,13 @@ void RISCVELFStreamer::emitValueImpl(const MCExpr *Value, unsigned Size,
                                      SMLoc Loc) {
   emitDataMappingSymbol();
   MCELFStreamer::emitValueImpl(Value, Size, Loc);
+}
+
+MCSymbol &RISCVELFStreamer::emitLpadMappingSymbol(const StringRef Label) {
+  std::string SymName("$s");
+  SymName.reserve(2 + Label.size());
+  SymName.insert(SymName.end(), Label.begin(), Label.end());
+  return emitMappingSymbol(SymName);
 }
 
 namespace llvm {

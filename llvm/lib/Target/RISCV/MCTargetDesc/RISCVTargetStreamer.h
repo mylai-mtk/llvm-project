@@ -59,6 +59,11 @@ public:
                                     StringRef StringValue);
   void emitNoteGnuPropertySection(const uint32_t Feature1And);
 
+  /// Emits a landing pad mapping symbol at the current location. Returns
+  /// nullptr if emission is not supported, otherwise returns the just emitted
+  /// symbol
+  virtual MCSymbol *emitLpadMappingSymbol(const StringRef Label);
+
   virtual void recordLpadInfo(const MCSymbol &AnchorSym,
                               const uint32_t LpadVal);
   virtual void clearLpadInfos();

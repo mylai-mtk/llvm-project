@@ -115,6 +115,10 @@ void RISCVTargetStreamer::emitNoteGnuPropertySection(
   OutStreamer.popSection();
 }
 
+MCSymbol *RISCVTargetStreamer::emitLpadMappingSymbol(const StringRef) {
+  return nullptr;
+}
+
 void RISCVTargetStreamer::recordLpadInfo(const MCSymbol &, const uint32_t) {}
 
 void RISCVTargetStreamer::clearLpadInfos() {}

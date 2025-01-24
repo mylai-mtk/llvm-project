@@ -10,6 +10,7 @@
 #define LLVM_LIB_TARGET_RISCV_MCTARGETDESC_RISCVELFSTREAMER_H
 
 #include "RISCVTargetStreamer.h"
+#include "llvm/ADT/StringRef.h"
 #include "llvm/MC/MCELFStreamer.h"
 
 namespace llvm {
@@ -20,7 +21,7 @@ class RISCVELFStreamer : public MCELFStreamer {
   void reset() override;
   void emitDataMappingSymbol();
   void emitInstructionsMappingSymbol();
-  void emitMappingSymbol(StringRef Name);
+  MCSymbol &emitMappingSymbol(StringRef Name);
 
   enum ElfMappingSymbol { EMS_None, EMS_Instructions, EMS_Data };
 
@@ -38,6 +39,7 @@ public:
   void emitBytes(StringRef Data) override;
   void emitFill(const MCExpr &NumBytes, uint64_t FillValue, SMLoc Loc) override;
   void emitValueImpl(const MCExpr *Value, unsigned Size, SMLoc Loc) override;
+  MCSymbol &emitLpadMappingSymbol(const StringRef Label);
 };
 
 class RISCVTargetELFStreamer : public RISCVTargetStreamer {
@@ -69,6 +71,8 @@ public:
   void emitDirectiveOptionRelax() override;
   void emitDirectiveOptionNoRelax() override;
   void emitDirectiveVariantCC(MCSymbol &Symbol) override;
+
+  MCSymbol *emitLpadMappingSymbol(const StringRef Label) override;
 
   void recordLpadInfo(const MCSymbol &AnchorSym,
                       const uint32_t LpadVal) override;
