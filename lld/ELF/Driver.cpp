@@ -414,8 +414,14 @@ static void checkOptions(Ctx &ctx) {
           << "--pcrel-optimize is only supported on PowerPC64 targets";
   }
 
-  if (ctx.arg.relaxGP && ctx.arg.emachine != EM_RISCV)
-    ErrAlways(ctx) << "--relax-gp is only supported on RISC-V targets";
+  if (ctx.arg.emachine != EM_RISCV) {
+    if (ctx.arg.relaxGP)
+      ErrAlways(ctx) << "--relax-gp is only supported on RISC-V targets";
+    if (ctx.arg.zZicfilpReport != "none")
+      ErrAlways(ctx) << "-z zicfilip-report is only supported on RISC-V targets";
+    if (ctx.arg.zZicfissReport != "none")
+      ErrAlways(ctx) << "-z zicfiss-report is only supported on RISC-V targets";
+  }
 
   if (ctx.arg.emachine != EM_386 && ctx.arg.emachine != EM_X86_64 &&
       ctx.arg.zCetReport != "none")
@@ -1602,7 +1608,9 @@ static void readConfigs(Ctx &ctx, opt::InputArgList &args) {
   auto reports = {std::make_pair("bti-report", &ctx.arg.zBtiReport),
                   std::make_pair("cet-report", &ctx.arg.zCetReport),
                   std::make_pair("gcs-report", &ctx.arg.zGcsReport),
-                  std::make_pair("pauth-report", &ctx.arg.zPauthReport)};
+                  std::make_pair("pauth-report", &ctx.arg.zPauthReport),
+                  std::make_pair("zicfilp-report", &ctx.arg.zZicfilpReport),
+                  std::make_pair("zicfiss-report", &ctx.arg.zZicfissReport)};
   for (opt::Arg *arg : args.filtered(OPT_z)) {
     std::pair<StringRef, StringRef> option =
         StringRef(arg->getValue()).split('=');
