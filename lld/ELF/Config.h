@@ -136,6 +136,9 @@ enum LtoKind : uint8_t {UnifiedThin, UnifiedRegular, Default};
 // For -z gcs=
 enum class GcsPolicy { Implicit, Never, Always };
 
+// For -z force-zicfilp=
+enum class ForceZicfilpPolicy { Default, Unlabeled, FuncSig };
+
 struct SymbolVersion {
   llvm::StringRef name;
   bool isExternCpp;
@@ -385,6 +388,8 @@ struct Config {
   bool zText;
   bool zRetpolineplt;
   bool zWxneeded;
+  ForceZicfilpPolicy zForceZicfilp;
+  bool zForceZicfiss;
   DiscardPolicy discard;
   GnuStackKind zGnustack;
   ICFLevel icf;

@@ -575,6 +575,23 @@ static GcsPolicy getZGcs(Ctx &ctx, opt::InputArgList &args) {
   return ret;
 }
 
+static ForceZicfilpPolicy getZForceZicfilp(Ctx &ctx, opt::InputArgList &args) {
+  ForceZicfilpPolicy ret = ForceZicfilpPolicy::Default;
+  for (auto *arg : args.filtered(OPT_z)) {
+    std::pair<StringRef, StringRef> kv = StringRef(arg->getValue()).split('=');
+    if (kv.first == "force-zicfilp") {
+      arg->claim();
+      if (kv.second == "unlabeled")
+        ret = ForceZicfilpPolicy::Unlabeled;
+      else if (kv.second == "func-sig")
+        ret = ForceZicfilpPolicy::FuncSig;
+      else
+        ErrAlways(ctx) << "unknown -z force-zicfilp= value: " << kv.second;
+    }
+  }
+  return ret;
+}
+
 // Report a warning for an unknown -z option.
 static void checkZOptions(Ctx &ctx, opt::InputArgList &args) {
   // This function is called before getTarget(), when certain options are not
@@ -1532,6 +1549,8 @@ static void readConfigs(Ctx &ctx, opt::InputArgList &args) {
   ctx.arg.zCopyreloc = getZFlag(args, "copyreloc", "nocopyreloc", true);
   ctx.arg.zForceBti = hasZOption(args, "force-bti");
   ctx.arg.zForceIbt = hasZOption(args, "force-ibt");
+  ctx.arg.zForceZicfilp = getZForceZicfilp(ctx, args);
+  ctx.arg.zForceZicfiss = hasZOption(args, "force-zicfiss");
   ctx.arg.zGcs = getZGcs(ctx, args);
   ctx.arg.zGlobal = hasZOption(args, "global");
   ctx.arg.zGnustack = getZGnuStack(args);
@@ -2875,6 +2894,50 @@ static void readSecurityNotes(Ctx &ctx) {
                    "PAuth core info present for this link job";
       features |= GNU_PROPERTY_AARCH64_FEATURE_1_PAC;
     }
+
+    if (ctx.arg.zForceZicfilp == ForceZicfilpPolicy::Unlabeled &&
+        !(features & GNU_PROPERTY_RISCV_FEATURE_1_CFI_LP_UNLABELED)) {
+      features |= GNU_PROPERTY_RISCV_FEATURE_1_CFI_LP_UNLABELED;
+      if (ctx.arg.zZicfilpReport == "none")
+        Warn(ctx) << f
+                  << ": -z force-zicfilp=unlabeled: file does not have "
+                     "GNU_PROPERTY_RISCV_FEATURE_1_CFI_LP_UNLABELED property";
+
+      if (features & GNU_PROPERTY_RISCV_FEATURE_1_CFI_LP_FUNC_SIG) {
+        features &= ~static_cast<uint32_t>(GNU_PROPERTY_RISCV_FEATURE_1_CFI_LP_FUNC_SIG);
+        report(ctx.arg.zZicfilpReport)
+          << f
+          << ": -z force-zicfilp=unlabeled: file has conflicting "
+             "GNU_PROPERTY_RISCV_FEATURE_1_CFI_LP_FUNC_SIG property";
+      }
+    }
+
+    if (ctx.arg.zForceZicfilp == ForceZicfilpPolicy::FuncSig &&
+        !(features & GNU_PROPERTY_RISCV_FEATURE_1_CFI_LP_FUNC_SIG)) {
+      features |= GNU_PROPERTY_RISCV_FEATURE_1_CFI_LP_FUNC_SIG;
+      if (ctx.arg.zZicfilpReport == "none")
+        Warn(ctx) << f
+                  << ": -z force-zicfilp=func-sig: file does not have "
+                     "GNU_PROPERTY_RISCV_FEATURE_1_CFI_LP_FUNC_SIG property";
+
+      if (features & GNU_PROPERTY_RISCV_FEATURE_1_CFI_LP_UNLABELED) {
+        features &= ~static_cast<uint32_t>(GNU_PROPERTY_RISCV_FEATURE_1_CFI_LP_UNLABELED);
+        report(ctx.arg.zZicfilpReport)
+          << f
+          << ": -z force-zicfilp=func-sig: file has conflicting "
+             "GNU_PROPERTY_RISCV_FEATURE_1_CFI_LP_UNLABELED property";
+      }
+    }
+
+    if (ctx.arg.zForceZicfiss &&
+        !(features & GNU_PROPERTY_RISCV_FEATURE_1_CFI_SS)) {
+      features |= GNU_PROPERTY_RISCV_FEATURE_1_CFI_SS;
+      if (ctx.arg.zZicfissReport == "none")
+        Warn(ctx) << f
+                  << ": -z force-zicfiss: file does not have "
+                     "GNU_PROPERTY_RISCV_FEATURE_1_ZICFISS property";
+    }
+
     ctx.arg.andFeatures &= features;
 
     if (ctx.aarch64PauthAbiCoreInfo.empty())
