@@ -108,6 +108,8 @@ public:
   void emitFunctionEntryLabel() override;
   bool emitDirectiveOptionArch();
 
+  void emitNoteGnuProperty(const Module &M);
+
 private:
   void emitAttributes(const MCSubtargetInfo &SubtargetInfo);
 
@@ -578,8 +580,10 @@ void RISCVAsmPrinter::emitEndOfAsmFile(Module &M) {
   RISCVTargetStreamer &RTS =
       static_cast<RISCVTargetStreamer &>(*OutStreamer->getTargetStreamer());
 
-  if (TM.getTargetTriple().isOSBinFormatELF())
+  if (TM.getTargetTriple().isOSBinFormatELF()) {
     RTS.finishAttributeSection();
+    emitNoteGnuProperty(M);
+  }
   EmitHwasanMemaccessSymbols(M);
 }
 
@@ -936,6 +940,43 @@ void RISCVAsmPrinter::EmitHwasanMemaccessSymbols(Module &M) {
     EmitToStreamer(*OutStreamer, MCInstBuilder(RISCV::PseudoCALL).addExpr(Expr),
                    MCSTI);
   }
+}
+
+void RISCVAsmPrinter::emitNoteGnuProperty(const Module &M) {
+  uint32_t Feature1And = 0;
+  if (const Metadata *const Flag = M.getModuleFlag("cf-protection-branch");
+      Flag && !mdconst::extract<ConstantInt>(Flag)->isZero()) {
+    using namespace llvm::RISCVISAUtils;
+    const Metadata *const CFBranchLabelSchemeFlag =
+        M.getModuleFlag("cf-branch-label-scheme");
+    assert(CFBranchLabelSchemeFlag &&
+           "cf-protection=branch should come with cf-branch-label-scheme=... "
+           "on RISC-V targets");
+    const StringRef CFBranchLabelScheme =
+        cast<MDString>(CFBranchLabelSchemeFlag)->getString();
+    switch (getZicfilpLabelScheme(CFBranchLabelScheme)) {
+    case ZicfilpLabelSchemeKind::Invalid:
+      report_fatal_error("invalid cf-branch-label-scheme for RISC-V targets");
+      return;
+    case ZicfilpLabelSchemeKind::Unlabeled:
+      Feature1And |= ELF::GNU_PROPERTY_RISCV_FEATURE_1_CFI_LP_UNLABELED;
+      break;
+    case ZicfilpLabelSchemeKind::FuncSig:
+      Feature1And |= ELF::GNU_PROPERTY_RISCV_FEATURE_1_CFI_LP_FUNC_SIG;
+      break;
+    }
+  }
+
+  if (const Metadata *const Flag = M.getModuleFlag("cf-protection-return");
+      Flag && !mdconst::extract<ConstantInt>(Flag)->isZero())
+    Feature1And |= ELF::GNU_PROPERTY_RISCV_FEATURE_1_CFI_SS;
+
+  if (!Feature1And)
+    return;
+
+  RISCVTargetStreamer &RTS =
+      static_cast<RISCVTargetStreamer &>(*OutStreamer->getTargetStreamer());
+  RTS.emitNoteGnuPropertySection(Feature1And);
 }
 
 static MCOperand lowerSymbolOperand(const MachineOperand &MO, MCSymbol *Sym,
