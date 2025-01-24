@@ -2783,7 +2783,7 @@ static void redirectSymbols(Ctx &ctx, ArrayRef<WrappedSymbol> wrapped) {
 // ones can be allowed (see -z pauth-report).
 static void readSecurityNotes(Ctx &ctx) {
   if (ctx.arg.emachine != EM_386 && ctx.arg.emachine != EM_X86_64 &&
-      ctx.arg.emachine != EM_AARCH64)
+      ctx.arg.emachine != EM_AARCH64 && ctx.arg.emachine != EM_RISCV)
     return;
 
   ctx.arg.andFeatures = -1;
@@ -2838,6 +2838,20 @@ static void readSecurityNotes(Ctx &ctx) {
         << f
         << ": -z cet-report: file does not have "
            "GNU_PROPERTY_X86_FEATURE_1_SHSTK property";
+
+    reportUnless(ctx.arg.zZicfilpReport,
+                 features & (GNU_PROPERTY_RISCV_FEATURE_1_CFI_LP_UNLABELED |
+                             GNU_PROPERTY_RISCV_FEATURE_1_CFI_LP_FUNC_SIG))
+        << f
+        << ": -z zicfilp-report: file does not have "
+           "GNU_PROPERTY_RISCV_FEATURE_1_CFI_LP_UNLABELED/"
+           "GNU_PROPERTY_RISCV_FEATURE_1_CFI_LP_FUNC_SIG property";
+
+    reportUnless(ctx.arg.zZicfissReport,
+                 features & GNU_PROPERTY_RISCV_FEATURE_1_CFI_SS)
+        << f
+        << ": -z zicfiss-report: file does not have "
+           "GNU_PROPERTY_RISCV_FEATURE_1_CFI_SS property";
 
     if (ctx.arg.zForceBti && !(features & GNU_PROPERTY_AARCH64_FEATURE_1_BTI)) {
       features |= GNU_PROPERTY_AARCH64_FEATURE_1_BTI;
