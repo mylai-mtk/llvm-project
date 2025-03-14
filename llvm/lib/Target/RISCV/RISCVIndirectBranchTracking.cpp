@@ -58,7 +58,7 @@ static void emitLpad(MachineBasicBlock &MBB, const RISCVInstrInfo *TII,
   auto I = MBB.begin();
   const auto Opcode =
       LabelSrc ? RISCV::PseudoLPAD_WITH_LABEL_SRC : RISCV::PseudoLPAD;
-  const MachineInstrBuilder &MIB =
+  MachineInstrBuilder MIB =
       BuildMI(MBB, I, MBB.findDebugLoc(I), TII->get(Opcode)).addImm(Label);
   if (LabelSrc)
     MIB.addMetadata(LabelSrc);
